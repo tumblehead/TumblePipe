@@ -1,10 +1,14 @@
+from contextlib import contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Iterator
 import os
 import threading
 
 from tumblepipe.config.layout import require_current_layout
 from tumblepipe.config.store import shared_store
 from tumblepipe.storage import Storage
+from tumblepipe.util.uri import Uri
 
 def path_str(path: Path):
     return str(path).replace('\\', '/')
@@ -135,6 +139,14 @@ class _LazyClient:
 
 # Inert lazy handle to the global client; safe to import without TH_* set.
 api = _LazyClient()
+
+@contextmanager
+def project_temp_dir() -> Iterator[Path]:
+    """A fresh folder under the project's ``temp:/``, removed on exit."""
+    root = api.storage.resolve(Uri.parse('temp:/'))
+    root.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(root)) as path:
+        yield Path(path)
 
 def reset_default_client():
     """Reset the global client instance.

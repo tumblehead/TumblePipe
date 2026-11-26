@@ -7,12 +7,11 @@ Build USD runs it in the session. ``pipe.build`` resolves what to compose,
 this writes it.
 """
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from tumblepipe.api import (
-    path_str,
-    api
+    api,
+    project_temp_dir,
 )
 from tumblepipe.config.channels import DEFAULT_CHANNEL, read_published_channel
 from tumblepipe.config.department import (
@@ -21,7 +20,7 @@ from tumblepipe.config.department import (
 from tumblepipe.config.entities import get_entity_type as _get_entity_type
 from tumblepipe.config.timeline import BlockRange, require_fps
 from tumblepipe.pipe import build as pipe_build
-from tumblepipe.pipe.paths import current_staged_path
+from tumblepipe.pipe.paths import get_latest_staged_path
 from tumblepipe.pipe.scene_build import generate_root_version, root_layer_is_stale
 from tumblepipe.pipe.usd.sublayer_refs import (
     generate_entity_sublayer_uri,
@@ -68,7 +67,7 @@ def _staged_closure(
         return set()
     _visited.add(key)
     closure = set()
-    staged_version_path = current_staged_path(asset_uri, channel_name)
+    staged_version_path = get_latest_staged_path(asset_uri, channel_name)
     if staged_version_path is None:
         return closure
     # Absent while a concurrent build is still copying its version in: an
@@ -190,7 +189,7 @@ def _store_shot_stage(
         # would float to whatever is newest at resolve time — the farm
         # divergence bug class). Unstaged assets fall back to version-less.
         channel = asset_channels.get(asset_uri, 'default')
-        staged_version_path = current_staged_path(asset_uri, channel)
+        staged_version_path = get_latest_staged_path(asset_uri, channel)
         staged_version = (
             None if staged_version_path is None
             else staged_version_path.name
@@ -299,7 +298,7 @@ def _store_asset_stage(
         lambda uri: asset_channels[uri]
     ):
         tracked_channel = asset_channels[tracked_uri]
-        staged_version_path = current_staged_path(tracked_uri, tracked_channel)
+        staged_version_path = get_latest_staged_path(tracked_uri, tracked_channel)
         staged_version = (
             None if staged_version_path is None
             else staged_version_path.name
@@ -423,10 +422,7 @@ def _build_shot(
     print(f'Root layer: {resolved_context["root_layer"]}')
 
     # Export
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Temp paths
         temp_stage_path = temp_path / output_path.name
@@ -501,10 +497,7 @@ def _build_asset(
         print(f'  {dept}: {path.name}')
 
     # Export
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Temp paths
         temp_stage_path = temp_path / output_path.name

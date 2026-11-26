@@ -1,5 +1,4 @@
 import logging
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import datetime as dt
 import shutil
@@ -9,19 +8,19 @@ import hou
 
 logger = logging.getLogger(__name__)
 
-from tumblepipe.api import get_user_name, path_str, api
+from tumblepipe.api import get_user_name, path_str, api, project_temp_dir
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
-from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import require_fps
 from tumblepipe.pipe import export_targets
-from tumblepipe.pipe.houdini import prim_metadata, prim_queries, sim_start
+from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.farm_node import FarmNode
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.lops.layer_cook import LayerWriter
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.pipe.usd.retime import shift_directory
 from tumblepipe.pipe.houdini.export_checks import (
@@ -31,7 +30,6 @@ from tumblepipe.pipe.houdini.export_checks import (
     cook_errors,
     list_expected_asset_uris,
     make_portable,
-    validate_export_files,
 )
 from tumblepipe.pipe.paths import (
     SHARED_CHANNEL,
@@ -49,11 +47,7 @@ from tumblepipe.util.io import copy_version_contents
 from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.pipe.build import sourced_from_shot, arrived_from_downstream
 from tumblepipe.config.department import list_departments
-from tumblepipe.pipe.usd.stitch import (
-    stitch_usd_directories,
-    calculate_chunks,
-    flatten_sidecar_directories,
-)
+from tumblepipe.pipe.houdini.nodes import button
 
 
 def _downstream_shot_departments(department_name: str) -> list[str]:
@@ -253,7 +247,7 @@ def _copy_to_version(temp_path: Path, version_path: Path):
     copy_version_contents(temp_path, version_path)
 
 
-class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
+class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode, LayerWriter):
 
     POOL_PARM = 'export_pool'
     PRIORITY_PARM = 'export_priority'
@@ -261,28 +255,13 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
     EXPORTS_ENTITY_RANGE = True
 
     def list_department_names(self) -> list[str]:
-        entity_type = self.get_entity_type()
-        if entity_type is None:
-            return ['from_context']
-
-        context_name = 'assets' if entity_type == 'asset' else 'shots'
-        # Exclude generated departments and filter to publishable only.
-        # scoped_departments narrows the pool to the departments the target
-        # entity actually has.
-        names = [
-            d.name for d in
-            self.scoped_departments(context_name, include_generated=False)
-            if d.publishable
-        ]
-        return ['from_context'] + names
+        return self.department_choices(include_generated=False, publishable=True)
 
     def list_downstream_department_names(self) -> list[str]:
-        entity_type = self.get_entity_type()
-        if entity_type is None:
+        context = self.department_context()
+        if context is None:
             return []
-
-        context_name = 'assets' if entity_type == 'asset' else 'shots'
-        departments = self.scoped_departments(context_name)
+        departments = self.scoped_departments(context)
         if len(departments) == 0:
             return []
 
@@ -409,62 +388,24 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"{render_range.last_frame}"
         )
 
-        # The render step is deliberately dropped: a published stage cache
-        # must carry every frame so downstream renders can sample any frame
-        # (including a later switch to 1s). Sub-sampling the export on the
-        # render step also broke batched export - integer chunk boundaries
-        # do not align to a step>1 grid, so the stitched samples came out
-        # off-grid whenever batch_size was not a multiple of step. Exporting
-        # on 1s (export_f3) matches the farm exporter, which has always
-        # discarded step (see the farm submit path and export_houdini).
-        # On a Multi's shared timeline the shot's frames are cooked where
-        # the shot sits there, then written back on the shot's own frames.
         time_offset = self.get_time_offset()
         user_name = get_user_name()
         timestamp = dt.datetime.now()
         version_path = next_export_path(entity_uri, channel_name, department_name)
         version_name = version_path.name
 
-        root = self._input_stage(channel_name).GetPseudoRoot()
-
-        # What the upstream import nodes placed on the stage. Read before the
-        # scrape: it decides which downstream-sourced assets stay, and the
-        # drop check cross-checks the scrape against it. A self-import
-        # (import_layer pulling the exporting entity's own layer) is
-        # deliberately untagged — never expect it in the scrape.
-        expected_asset_uris = {
-            str(uri) for uri in list_expected_asset_uris(native)
-            if uri != entity_uri
-        }
-        check_no_root_asset_imports(entity_uri, expected_asset_uris)
-        assets_by_uri, asset_inputs = _scrape_assets(
-            root, entity_uri, department_name, version_name, expected_asset_uris
-        )
-        check_no_dropped_assets(
-            root, entity_uri, expected_asset_uris, set(assets_by_uri)
+        _expected, assets_by_uri, asset_inputs = self._checked_stage(
+            entity_uri, department_name, channel_name, version_name,
         )
 
-        self.parm('set_metadata_fps').set(require_fps(entity_uri))
-
-        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-        root_temp_path.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-            temp_path = Path(temp_dir)
+        with project_temp_dir() as temp_path:
             layer_file_name = get_layer_file_name(
                 entity_uri, channel_name, department_name, version_name
             )
-            # TumbleRig sims (Motion Effects, Collisions, Wobl...) export From
-            # Start Frame in a GUI publish too, as they do on the farm: the
-            # same frames whatever was played before (sim_start).
-            with sim_start.forced():
-                self._write_layer(
-                    temp_path, layer_file_name,
-                    shift_block_range(render_range, time_offset),
-                    self.get_batch_size(),
-                )
-            if time_offset != 0:
-                report_progress(f"moving frames back by {time_offset}")
-                shift_directory(temp_path, -time_offset)
+            self.cook_layer(
+                temp_path, layer_file_name, render_range,
+                time_offset, self.get_batch_size(),
+            )
             layout_keys = self._write_layout_keys(
                 temp_path, layer_file_name, time_offset
             )
@@ -537,35 +478,18 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         user_name = get_user_name()
         timestamp = dt.datetime.now()
 
-        root = self._input_stage(channel_name).GetPseudoRoot()
-        expected_asset_uris = {
-            str(uri) for uri in list_expected_asset_uris(native)
-            if uri != source_uri
-        }
-        check_no_root_asset_imports(source_uri, expected_asset_uris)
         # The stage is the source's: check it once, as a single export does.
-        scraped, _ = _scrape_assets(
-            root, source_uri, department_name, '', expected_asset_uris
+        expected_asset_uris, _scraped, _inputs = self._checked_stage(
+            source_uri, department_name, channel_name, '',
         )
-        check_no_dropped_assets(
-            root, source_uri, expected_asset_uris, set(scraped)
-        )
-        self.parm('set_metadata_fps').set(require_fps(source_uri))
 
-        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-        root_temp_path.mkdir(parents=True, exist_ok=True)
         written = []
-        with TemporaryDirectory(dir=path_str(root_temp_path)) as cook_dir:
-            cook_path = Path(cook_dir)
+        with project_temp_dir() as cook_path:
             cook_name = 'layer.usd'
-            self._write_layer(
-                cook_path, cook_name,
-                shift_block_range(render_range, time_offset),
-                self.get_batch_size(),
+            self.cook_layer(
+                cook_path, cook_name, render_range,
+                time_offset, self.get_batch_size(),
             )
-            if time_offset != 0:
-                report_progress(f"moving frames back by {time_offset}")
-                shift_directory(cook_path, -time_offset)
             # The stage may have changed while exporting
             root = self._input_stage(channel_name).GetPseudoRoot()
             aov_names = self._aov_names(channel_name)
@@ -587,8 +511,7 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
                     node_range.start_frame,
                     None if target_range is None else target_range.start_frame,
                 )
-                with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-                    temp_path = Path(temp_dir)
+                with project_temp_dir() as temp_path:
                     shutil.copytree(cook_path, temp_path, dirs_exist_ok=True)
                     layer_file_name = get_layer_file_name(
                         target_uri, channel_name, department_name, version_name
@@ -626,6 +549,32 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f'by {user_name}'
         )
         return ', '.join(written)
+
+    def _checked_stage(self, entity_uri: Uri, department_name: str, channel_name: str, version_name: str):
+        """Check the input stage for an export of ``entity_uri`` and scrape
+        its assets; set the export's fps. Returns ``(expected asset uris,
+        assets by uri, asset inputs)``: the scrape records ``version_name``
+        (blank when it only checks).
+
+        The expected assets are what the upstream import nodes placed on the
+        stage, read before the scrape: they decide which downstream-sourced
+        assets stay, and the drop check cross-checks the scrape against
+        them. A self-import (import_layer pulling the exporting entity's own
+        layer) is deliberately untagged: never expected in the scrape."""
+        root = self._input_stage(channel_name).GetPseudoRoot()
+        expected_asset_uris = {
+            str(uri) for uri in list_expected_asset_uris(self.native())
+            if uri != entity_uri
+        }
+        check_no_root_asset_imports(entity_uri, expected_asset_uris)
+        assets_by_uri, asset_inputs = _scrape_assets(
+            root, entity_uri, department_name, version_name, expected_asset_uris
+        )
+        check_no_dropped_assets(
+            root, entity_uri, expected_asset_uris, set(assets_by_uri)
+        )
+        self.parm('set_metadata_fps').set(require_fps(entity_uri))
+        return expected_asset_uris, assets_by_uri, asset_inputs
 
     def _aov_names(self, channel_name) -> list[str]:
         """The render vars on the input stage, read again after the cook
@@ -720,66 +669,6 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"{self.path()} failed to cook.\n"
             + cook_errors(stage_node)
         )
-
-    def _write_layer(self, temp_path, layer_file_name, render_range, batch_size):
-        """Export the stage into ``temp_path/layer_file_name``: in one go, or
-        (batch_size > 0) in chunks of frames stitched together."""
-        self.parm('export_f3').set(1)
-        if batch_size == 0:
-            report_progress(
-                f"cooking frames {render_range.first_frame}-{render_range.last_frame}"
-            )
-            self._export_frames(
-                temp_path, layer_file_name,
-                render_range.first_frame, render_range.last_frame,
-                f"standard export (frames {render_range.first_frame}-"
-                f"{render_range.last_frame})",
-            )
-            return
-
-        chunks_dir = temp_path / 'chunks'
-        chunks_dir.mkdir()
-        chunk_dirs = []
-        for chunk_start, chunk_end in calculate_chunks(
-            render_range.first_frame, render_range.last_frame, batch_size
-        ):
-            chunk_name = f"{chunk_start:04d}-{chunk_end:04d}"
-            report_progress(
-                f"cooking frames {chunk_start}-{chunk_end} of {render_range.last_frame}"
-            )
-            chunk_dir = chunks_dir / chunk_name
-            chunk_dir.mkdir()
-            self._export_frames(
-                chunk_dir, layer_file_name, chunk_start, chunk_end,
-                f"batch export chunk {chunk_name}",
-            )
-            chunk_dirs.append(chunk_dir)
-
-        report_progress(f"stitching {len(chunk_dirs)} chunks")
-        try:
-            stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
-        except Exception as error:
-            raise ExportLayerError(
-                f"Failed to stitch {len(chunk_dirs)} USD chunks into "
-                f"{temp_path / layer_file_name}: {error}"
-            ) from error
-        shutil.rmtree(chunks_dir)
-
-    def _export_frames(self, out_dir, layer_file_name, first_frame, last_frame, description):
-        """Run the export ROP for ``first_frame``..``last_frame`` into
-        ``out_dir/layer_file_name``, flattening its sidecar folders."""
-        # COP textures land in 'stage.usd.textures/' beside it; the flatten
-        # below moves them up and repoints the layers at them
-        temp_export_name = 'stage.usd'
-        self.parm('export_f1').deleteAllKeyframes()
-        self.parm('export_f2').deleteAllKeyframes()
-        self.parm('export_f1').set(first_frame)
-        self.parm('export_f2').set(last_frame)
-        self.parm('export_lopoutput').set(path_str(out_dir / temp_export_name))
-        self.parm('export_execute').pressButton()
-        validate_export_files(out_dir, temp_export_name, description)
-        (out_dir / temp_export_name).rename(out_dir / layer_file_name)
-        flatten_sidecar_directories(out_dir)
 
     def _own_workfile(self) -> tuple[Path, str]:
         """The workfile this node lives in, as last saved, and its department:
@@ -895,23 +784,16 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         # channel used to stop the run until each was dismissed.
 
     def open_location(self):
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            hou.ui.displayMessage("No entity selected.", severity=hou.severityType.Warning)
-            return
+        """Open the latest export's folder in the OS file browser."""
+        entity_uri = self.require_entity_uri()
         channel_name = self.get_channel_name()
-        department_name = self.get_department_name()
-        if department_name is None:
-            hou.ui.displayMessage("No department selected.", severity=hou.severityType.Warning)
-            return
-
+        department_name = self.require_department_name()
         export_path = latest_export_path(entity_uri, channel_name, department_name)
-        if export_path is None:
-            hou.ui.displayMessage(f"No exports found for {department_name}.", severity=hou.severityType.Warning)
-            return
-        if not export_path.exists():
-            hou.ui.displayMessage(f"Export path does not exist: {export_path}", severity=hou.severityType.Warning)
-            return
+        if export_path is None or not export_path.exists():
+            raise self._error(
+                f"{entity_uri} has no '{department_name}' export of channel "
+                f"'{channel_name}' yet"
+            )
         hou.ui.showInFileBrowser(path_str(export_path))
 
 
@@ -927,23 +809,27 @@ def on_created(raw_node):
     node._initialize()
 
 
+@button('Export Layer')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ExportLayer(raw_node)
     node.execute()
 
 
+@button('Export Layer')
 def open_location(kwargs):
     raw_node = kwargs['node']
     node = ExportLayer(raw_node)
     node.open_location()
 
 
+@button('Export Layer')
 def select(kwargs):
     """Entity button."""
     ExportLayer(kwargs['node']).pick_entity()
 
 
+@button('Export Layer')
 def select_targets(kwargs):
     """The Targets Browse... button: pick the shots or assets to export to
     (Targets: Chosen), several at once. The picker opens on the node's own
@@ -969,78 +855,11 @@ def select_targets(kwargs):
         node.parm(node.TARGETS_MODE_PARM).set(export_targets.CHOSEN)
 
 
+@button('Validate')
 def validate(kwargs):
-    """HDA button callback to run stage validation."""
-    from tumblepipe.pipe.houdini.validators import validate_stage_for_department
-
-    raw_node = kwargs['node']
-    stage_node = raw_node.node('IN_stage')
-
-    if stage_node is None:
-        hou.ui.displayMessage(
-            "No stage input connected.",
-            severity=hou.severityType.Warning
-        )
-        return
-
-    stage = stage_node.stage()
-    if stage is None:
-        hou.ui.displayMessage(
-            "No stage available for validation.",
-            severity=hou.severityType.Warning
-        )
-        return
-
-    node = ExportLayer(raw_node)
-    entity_uri = node.get_entity_uri()
-    department = node.get_department_name()
-
-    if entity_uri is None or department is None:
-        hou.ui.displayMessage(
-            "Entity or department not set on this export node - cannot pick validators.",
-            severity=hou.severityType.Warning
-        )
-        return
-
-    uri_str = str(entity_uri)
-    entity_context = 'shots' if uri_str.startswith('entity:/shots/') else 'assets'
-
-    root = stage.GetPseudoRoot()
-    result = validate_stage_for_department(
-        root, entity_context, department, {'entity_uri': uri_str}
-    )
-
-    if result.passed:
-        # A warning does not fail validation, but saying "no issues found"
-        # while holding a non-empty issue list is a lie — and the most common
-        # warning is "No stage available for validation", i.e. validation could
-        # not run at all.
-        if result.warnings:
-            hou.ui.displayMessage(
-                result.format_message(),
-                severity=hou.severityType.Warning,
-                title="Validation Passed With Warnings"
-            )
-        else:
-            hou.ui.displayMessage(
-                "Validation passed - no issues found.",
-                severity=hou.severityType.Message,
-                title="Validation Passed"
-            )
-        return
-
-    from tumblepipe.pipe.houdini.ui.validation_dialog import (
-        ValidationConfirmDialog,
-    )
-    entity_name = uri_str.rsplit('/', 1)[-1] if uri_str else 'unknown'
-    dialog = ValidationConfirmDialog(
-        validation_result=result,
-        department=department,
-        entity_name=entity_name,
-        parent=hou.qt.mainWindow(),
-        read_only=True,
-    )
-    dialog.exec_()
+    """The Validate button."""
+    from tumblepipe.pipe.houdini.validators import show_validation
+    show_validation(ExportLayer(kwargs['node']), kwargs['node'])
 
 
 def output_modified_prims(raw_node) -> str:

@@ -8,7 +8,7 @@ Config: ``specs.export``.
 
 from pathlib import Path
 
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.farm.jobs import export as export_job
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch

@@ -8,10 +8,12 @@ from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.asset_rows import AssetRows
 from tumblepipe.pipe.houdini.sops import import_rig
+from tumblepipe.pipe.houdini.lops import animate_ghost
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
 from tumblepipe.pipe.houdini import prim_metadata
 from tumblepipe.pipe.paths import get_rig_export_path
 from tumblepipe.pipe.usd.instances import copies_are_animated
+from tumblepipe.pipe.houdini.nodes import button
 
 
 def has_rig_export(asset_uri: Uri, channel_name: str = 'default') -> bool:
@@ -151,7 +153,7 @@ class ImportRigs(AssetRows):
         empty, the stage fed into the th::animate this node sits in."""
         stage_path = self.parm('stage_path').eval()
         if len(stage_path) == 0:
-            stage = import_rig._shot_stage(self.native())
+            stage = import_rig.shot_stage(self.native())
             if stage is None:
                 raise self._error(
                     'not inside a th::animate, so there is no shot stage to '
@@ -275,23 +277,25 @@ class ImportRigs(AssetRows):
 def create(scene, name):
     return ns.create_node(scene, name, ImportRigs, 'import_rigs', 'Sop')
 
+@button('Import Rigs')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRigs(raw_node)
     try:
         import_rig.announce_warning(node.execute())
     finally:
-        import_rig._refresh_ghost(raw_node)
+        animate_ghost.refresh_ghost(raw_node)
 
+@button('Discover Rigs')
 def discover(kwargs):
     """The Discover button: rows from the stage's animatable prims."""
     node = ImportRigs(kwargs['node'])
     try:
-        with ns.node_errors_as_message('Discover Rigs'):
-            import_rig.announce_warning(node.discover())
+        import_rig.announce_warning(node.discover())
     finally:
-        import_rig._refresh_ghost(kwargs['node'])
+        animate_ghost.refresh_ghost(kwargs['node'])
 
+@button('Set Scene Copies')
 def set_scene_copies(kwargs):
     """The Set Scene Copies button: write the rows' copy counts into the
     shot's scene (after a confirm), re-import the shot and Discover
@@ -299,6 +303,7 @@ def set_scene_copies(kwargs):
     from tumblepipe.pipe.houdini.sops import scene_copies
     scene_copies.from_import_rigs(kwargs)
 
+@button('Import Rigs')
 def select(kwargs):
     """A row's Entity button: pick that row's asset."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog

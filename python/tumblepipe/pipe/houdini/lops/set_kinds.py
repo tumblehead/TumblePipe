@@ -1,5 +1,6 @@
 
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.nodes import button
 
 class SetKinds(ns.Node):
     def __init__(self, native):
@@ -84,6 +85,7 @@ class SetKinds(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, SetKinds, 'set_kinds')
 
+@button('Set Kinds')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = SetKinds(raw_node)

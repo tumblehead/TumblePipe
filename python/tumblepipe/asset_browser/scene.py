@@ -16,8 +16,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from tumblepipe.config import groups as config_groups
 from tumblepipe.farm.submit import grid as farm_grid
 from . import uris as uris
+from . import containers
 from .containers import GroupContainer
 from .houdini import session_nc_type
 from tumblepipe.pipe.houdini.ui.report import report_failure, run_on_main_thread
@@ -335,7 +337,7 @@ class SceneManager:
         """
         if not asset_id:
             return None
-        if asset_id.startswith("group:"):
+        if containers.group_of(asset_id) is not None:
             # A Multi's workfile carries a two-segment groups: URI, which
             # the entity-shaped resolver below has no answer for
             # (``uri_for_ready`` splits for PROJECT/CATEGORY/NAME), so a
@@ -756,9 +758,9 @@ class SceneManager:
                 )
                 if scene_proj is not None:
                     self._activator.activate(scene_proj)
-            uris, names, context, department = farm_seed(scene_ctx, _multi_members)
+            uris, context, department = farm_seed(scene_ctx, config_groups.members)
             open_submit_jobs_dialog(
-                uris, names, context, department=department,
+                uris, context, department=department,
             )
         except Exception as exc:
             report_failure("Render submit", exc)
@@ -843,8 +845,8 @@ class SceneManager:
         return None  # cancel
 
 
-def farm_seed(scene_ctx, members_of) -> tuple[list, list[str], str, str | None]:
-    """What the Farm Submit grid opens on: ``(uris, names, context, department)``.
+def farm_seed(scene_ctx, members_of) -> tuple[list, str, str | None]:
+    """What the Farm Submit grid opens on: ``(uris, context, department)``.
 
     The loaded workfile's entity seeds the ticks and its department pins
     the preview cuts; with no pipeline workfile nothing is seeded and the
@@ -857,15 +859,15 @@ def farm_seed(scene_ctx, members_of) -> tuple[list, list[str], str, str | None]:
     from tumblepipe.farm.submit.settings import expand_targets, is_group_target
 
     if scene_ctx is None:
-        return [], [], "shots", None
+        return [], "shots", None
     uri = scene_ctx.entity_uri
     segments = uri.segments
     department = scene_ctx.department_name
     if not segments or segments[0] not in ("shots", "assets"):
-        return [], [], "shots", department
+        return [], "shots", department
     if is_group_target(uri) and not expand_targets([uri], members_of):
-        return [], [], segments[0], department
-    return [uri], [segments[-1]], segments[0], department
+        return [], segments[0], department
+    return [uri], segments[0], department
 
 
 def workfile_entities(scene_ctx, members_of) -> list[str]:
@@ -896,19 +898,10 @@ def _loaded_workfile_entities() -> list[str]:
         hip = hou.hipFile.path()
         if not hip or hou.hipFile.isNewFile():
             return []
-        return workfile_entities(get_workfile_context(Path(hip)), _multi_members)
+        return workfile_entities(get_workfile_context(Path(hip)), config_groups.members)
     except Exception:
         log.debug("Farm Submit: the open workfile's entity could not be read", exc_info=True)
         return []
-
-
-def _multi_members(group_uri) -> list:
-    """Member URIs of the Multi at ``group_uri`` in the active project (the
-    open workfile's); empty when it is gone."""
-    from tumblepipe.api import default_client
-    from tumblepipe.config.groups import get_group_in
-    group = get_group_in(default_client().config, group_uri)
-    return list(group.members) if group is not None else []
 
 
 #: The open Farm Submit dialog, held so it is not collected while shown.
@@ -916,7 +909,7 @@ _submit_dialog = None
 
 
 def open_submit_jobs_dialog(
-    uris: list, names: list[str], context: str,
+    uris: list, context: str,
     department: str | None = None,
     tick_kinds: tuple[str, ...] = (farm_grid.RENDER,),
     channels: tuple[str, ...] | None = None,
@@ -950,7 +943,7 @@ def open_submit_jobs_dialog(
         geometry = previous.geometry()
         previous.close()
     dialog = SubmitJobsDialog(
-        uris, names, context, parent=hou.qt.mainWindow(),
+        uris, context, parent=hou.qt.mainWindow(),
         department=department, tick_kinds=tick_kinds, channels=channels,
         render_department=render_department,
         # The open workfile's rows are highlighted, whoever opened the grid.

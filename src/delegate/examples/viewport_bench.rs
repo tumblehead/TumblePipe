@@ -1,5 +1,5 @@
 //! How long TumbleView's core takes over a viewer frame, measured through
-//! the C ABI the shim calls (`th_render_ids`, with a `ThCache`, ids and a
+//! the C ABI the shim calls (`th_render_scene`, with a `ThCache`, ids and a
 //! transparent background, as Solaris's viewer asks for them), while the
 //! camera orbits a generated scene.
 //!
@@ -16,7 +16,7 @@
 //! picking ids out (a viewer with no id buffer bound).
 
 use std::time::Instant;
-use th_delegate_core::ffi::{th_cache_create, th_cache_free, th_render_ids, ThFrame, ThMeshView};
+use th_delegate_core::ffi::{th_cache_create, th_cache_free, th_render_scene, ThFrame, ThMeshView};
 use th_delegate_core::math::{self, Mat4};
 
 struct MeshData {
@@ -277,35 +277,16 @@ fn main() {
         let mut times = Vec::new();
         for k in 0..frames + 1 {
             let (world_to_clip, view_to_world) = camera(k as f64 * 0.05, w, h);
-            let frame = ThFrame {
-                width: w as u32,
-                height: h as u32,
-                world_to_clip,
-                view_to_world,
-                samples,
-                shading: 0,
-                ao,
-                blur_samples: 0,
-                motion: 0,
-                camera_keys: 0,
-                cameras: [0.0; 64],
-                focal_length: 0.0,
-                f_stop: 0.0,
-                focus_distance: 0.0,
-                alpha: 1,
-                gpu: gpu as u32,
-                linear_depth: 0,
-                lights: std::ptr::null(),
-                light_count: 0,
-                lighting: 0,
-                opaque: 0,
-            };
+            let frame =
+                ThFrame { samples, ao, alpha: 1, gpu: gpu as u32, ..ThFrame::new(w as u32, h as u32, world_to_clip, view_to_world) };
             let started = Instant::now();
             let status = unsafe {
-                th_render_ids(
+                th_render_scene(
                     &frame,
                     views.as_ptr(),
                     views.len() as u32,
+                    std::ptr::null(),
+                    0,
                     color.as_mut_ptr(),
                     depth.as_mut_ptr(),
                     if want_ids { ids.as_mut_ptr() } else { std::ptr::null_mut() },

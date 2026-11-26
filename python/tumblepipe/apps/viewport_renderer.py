@@ -42,8 +42,8 @@ def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
                  cull: str = 'off', transparency: str = 'on') -> dict:
     """``env`` with the viewport delegate registered for USD, ahead of the
     resolver, and told how to shade (``specs.playblast.PLAYBLAST_SHADINGS``)
-    and blur (``specs.playblast.look_blur``: motion blur, depth of field,
-    blur samples) at the shot's ``fps``, what lights it (``lighting``,
+    and blur (a look's ``motion_blur``, ``dof`` and ``blur_samples``)
+    at the shot's ``fps``, what lights it (``lighting``,
     ``specs.playblast.PLAYBLAST_LIGHTINGS``), which faces it culls
     (``cull``, ``specs.playblast.PLAYBLAST_CULLS``), whether see-through
     surfaces show what is behind them (``transparency``,

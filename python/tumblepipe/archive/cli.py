@@ -23,6 +23,7 @@ from tumblepipe.archive import inventory as inventory_mod
 from tumblepipe.archive import pack
 from tumblepipe.archive.plan import Options, Plan, Profile, make_plan
 from tumblepipe.archive.roots import project_roots
+from tumblepipe.util.text import human_bytes
 
 _UNITS = {'': 1, 'K': 1 << 10, 'M': 1 << 20, 'G': 1 << 30, 'T': 1 << 40}
 
@@ -39,15 +40,6 @@ def parse_size(text: str) -> int:
     if value <= 0:
         raise argparse.ArgumentTypeError(f'size must be positive: {text!r}')
     return int(value * _UNITS[unit])
-
-
-def human(count: int) -> str:
-    size = float(count)
-    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
-        if size < 1024 or unit == 'TB':
-            return f'{int(size)} B' if unit == 'B' else f'{size:.1f} {unit}'
-        size /= 1024
-    return f'{count} B'
 
 
 def build_plan(args) -> Plan:
@@ -79,13 +71,13 @@ def print_plan(plan: Plan) -> None:
     for kind, row in sorted(summary.items(), key=lambda kv: -(kv[1]['bytes_in'] + kv[1]['bytes_out'])):
         total_in += row['bytes_in']
         total_out += row['bytes_out']
-        archived = f'{row["files_in"]} / {human(row["bytes_in"])}' if row['files_in'] else '-'
-        left = f'{row["files_out"]} / {human(row["bytes_out"])}' if row['files_out'] else '-'
+        archived = f'{row["files_in"]} / {human_bytes(row["bytes_in"])}' if row['files_in'] else '-'
+        left = f'{row["files_out"]} / {human_bytes(row["bytes_out"])}' if row['files_out'] else '-'
         print(f'  {kind:<16} {archived:>22} {left:>22}')
-    print(f'  {"total":<16} {human(total_in):>22} {human(total_out):>22}')
+    print(f'  {"total":<16} {human_bytes(total_in):>22} {human_bytes(total_out):>22}')
     print('\nLeft out, by reason:')
     for reason, row in sorted(plan.excluded_by_reason().items(), key=lambda kv: -kv[1]['bytes']):
-        print(f'  {human(row["bytes"]):>10}  {row["files"]:>7} files  {reason}')
+        print(f'  {human_bytes(row["bytes"]):>10}  {row["files"]:>7} files  {reason}')
     if plan.warnings:
         print('\nCheck before sending:')
         for warning in plan.warnings:
@@ -119,7 +111,7 @@ class _Printer:
         percent = 100 * state.bytes_done / state.bytes_total if state.bytes_total else 100
         print(
             f'\r  {self.verb} {state.files_done}/{state.files_total} files, '
-            f'{human(state.bytes_done)} / {human(state.bytes_total)} ({percent:.0f}%)   ',
+            f'{human_bytes(state.bytes_done)} / {human_bytes(state.bytes_total)} ({percent:.0f}%)   ',
             end='', flush=True,
         )
 

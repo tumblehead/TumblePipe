@@ -38,21 +38,19 @@ OVERRIDE_FG = QColor(220, 220, 225)  # Brighter for override fields (non-default
 
 
 def _add_index_section(menu: QMenu, callback):
-    menu.addAction("Add Item").triggered.connect(partial(callback, "add"))
+    menu.addAction("Add Item").triggered.connect(lambda _checked=False: callback())
 
 
 def _remove_index_section(menu: QMenu, callback):
-    menu.addAction("Remove Item").triggered.connect(partial(callback, "remove"))
+    menu.addAction("Remove Item").triggered.connect(lambda _checked=False: callback())
 
 
 def _add_field_section(menu: QMenu, callback):
-    menu.addAction("Add Field").triggered.connect(partial(callback, "add"))
+    menu.addAction("Add Field").triggered.connect(lambda _checked=False: callback())
 
 
 def _remove_field_section(menu: QMenu, callback):
-    menu.addAction("Remove Field").triggered.connect(
-        partial(callback, "remove")
-    )
+    menu.addAction("Remove Field").triggered.connect(lambda _checked=False: callback())
 
 
 def _reorder_index_section(menu: QMenu, item, callback):
@@ -83,7 +81,9 @@ def _change_type_section(menu: QMenu, item, callback):
     def _is_included(item, value_type):
         if not isinstance(item, (FieldBasicItem, IndexBasicItem)):
             return True
-        return not isinstance(item.to_json(), value_type)
+        # exact type: a bool is an int to isinstance, which hid "integer"
+        # from a boolean row
+        return type(item.to_json()) is not value_type
 
     type_menu = menu.addMenu("Convert")
     if _is_included(item, type(None)):
@@ -228,7 +228,7 @@ def _parent(item: QStandardItem) -> QStandardItem | QStandardItemModel | None:
 def _propagate_origin_to_local(item):
     """Propagate LOCAL origin up the tree when an inherited value is modified."""
     parent = _parent(item)
-    while parent is not None and hasattr(parent, '_origin'):
+    while isinstance(parent, _Slot):
         if parent._origin == FieldOrigin.INHERITED:
             parent._origin = FieldOrigin.LOCAL
         parent = _parent(parent)
@@ -290,19 +290,27 @@ def _original_lookup(model, path: JsonPath) -> tuple[bool, JsonValue]:
     return True, value
 
 
+def _back_to_inherited(parent, key: str):
+    """Field ``key`` of object ``parent`` (the model or an object item) back
+    to the value ``parent`` inherits for it; removed when it inherits none."""
+    if key in parent._inherited_data:
+        parent._set_field_to_inherited(key, parent._inherited_data[key])
+    else:
+        parent._remove_field(key)
+
+
 def _revert_field_action(item):
-    """Restore a field to its state in the pristine document."""
+    """Restore a field to its state in the pristine document: its value
+    there, else what it inherits (:func:`_back_to_inherited`)."""
     parent = _parent(item)
     key = item._key
     found, original = _original_lookup(item.model(), parent.path() / key)
-    inherited = getattr(parent, '_inherited_data', None) or {}
-    if found:
-        origin = field_origin(True, key in inherited, original, inherited.get(key))
-        parent._set_field(key, original, origin, inherited.get(key))
-    elif key in inherited:
-        parent._set_field_to_inherited(key, inherited[key])
-    else:
-        parent._remove_field(key)
+    if not found:
+        _back_to_inherited(parent, key)
+        return
+    inherited = parent._inherited_data
+    origin = field_origin(True, key in inherited, original, inherited.get(key))
+    parent._set_field(key, original, origin, inherited.get(key))
 
 
 def _revert_field_section(menu: QMenu, item):
@@ -361,288 +369,249 @@ class NullItem(QStandardItem):
         return None
 
 
-class BooleanItem(QStandardItem):
-    def __init__(self, value: bool):
-        super().__init__()
+def _origin_brush(origin: FieldOrigin) -> QBrush | None:
+    """A row's text colour: grey inherited, bright pinned, plain local."""
+    if origin == FieldOrigin.INHERITED:
+        return QBrush(INHERITED_FG)
+    if origin in PINNED:
+        return QBrush(OVERRIDE_FG)
+    return None
 
-        # Members
+
+def _origin_font(origin: FieldOrigin) -> QFont | None:
+    """A pinned row's bold font; None otherwise."""
+    if origin not in PINNED:
+        return None
+    font = QFont()
+    font.setBold(True)
+    return font
+
+
+class _ScalarItem(QStandardItem):
+    """The Value cell of a null-free scalar row, coloured by its row's
+    origin (the slot in column 0). Subclasses differ only in how the value
+    reads (``__str__``); the delegate tells them apart for the editor."""
+
+    def __init__(self, value):
+        super().__init__()
         self._value = value
 
+    def data(self, role=None):
+        match role:
+            case Qt.EditRole:
+                return self._value
+            case Qt.DisplayRole:
+                return str(self)
+            case Qt.ForegroundRole:
+                return _origin_brush(_sibling(self, 0)._origin)
+            case Qt.FontRole:
+                return _origin_font(_sibling(self, 0)._origin)
+            case _:
+                return super().data(role)
+
+    def _on_value_changed(self, value):
+        if self._value == value:
+            return
+        self._value = value
+        _sibling(self, 0)._on_value_changed(value)
+
+    def _on_context_menu(self, position):
+        return _sibling(self, 0)._on_context_menu(position)
+
+    def to_json(self):
+        return self._value
+
+
+class BooleanItem(_ScalarItem):
     def __str__(self):
         return "true" if self._value else "false"
 
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._value
-            case Qt.DisplayRole:
-                return str(self)
-            case Qt.ForegroundRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin'):
-                    if sibling._origin == FieldOrigin.INHERITED:
-                        return QBrush(INHERITED_FG)
-                    if sibling._origin in PINNED:
-                        return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
 
-    def _on_value_changed(self, value):
-        if self._value == value:
-            return
-        self._value = value
-        item = _sibling(self, 0)
-        item._on_value_changed(value)
-
-    def _on_context_menu(self, position):
-        sibling = _sibling(self, 0)
-        return sibling._on_context_menu(position)
-
-    def to_json(self):
-        return self._value
-
-
-class IntegerItem(QStandardItem):
-    def __init__(self, value: int):
-        super().__init__()
-
-        # Members
-        self._value = value
-
+class IntegerItem(_ScalarItem):
     def __str__(self):
         return str(self._value)
 
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._value
-            case Qt.DisplayRole:
-                return str(self)
-            case Qt.ForegroundRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin'):
-                    if sibling._origin == FieldOrigin.INHERITED:
-                        return QBrush(INHERITED_FG)
-                    if sibling._origin in PINNED:
-                        return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
 
-    def _on_value_changed(self, value):
-        if self._value == value:
-            return
-        self._value = value
-        item = _sibling(self, 0)
-        item._on_value_changed(value)
-
-    def _on_context_menu(self, position):
-        sibling = _sibling(self, 0)
-        return sibling._on_context_menu(position)
-
-    def to_json(self):
-        return self._value
-
-
-class FloatItem(QStandardItem):
-    def __init__(self, value: float):
-        super().__init__()
-
-        # Members
-        self._value = value
-
+class FloatItem(_ScalarItem):
     def __str__(self):
         return str(self._value)
 
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._value
-            case Qt.DisplayRole:
-                return str(self)
-            case Qt.ForegroundRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin'):
-                    if sibling._origin == FieldOrigin.INHERITED:
-                        return QBrush(INHERITED_FG)
-                    if sibling._origin in PINNED:
-                        return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
 
-    def _on_value_changed(self, value):
-        if self._value == value:
-            return
-        self._value = value
-        item = _sibling(self, 0)
-        item._on_value_changed(value)
-
-    def _on_context_menu(self, position):
-        sibling = _sibling(self, 0)
-        return sibling._on_context_menu(position)
-
-    def to_json(self):
-        return self._value
-
-
-class StringItem(QStandardItem):
-    def __init__(self, value: str):
-        super().__init__()
-
-        # Members
-        self._value = value
-
+class StringItem(_ScalarItem):
     def __str__(self):
         return self._value
 
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._value
-            case Qt.DisplayRole:
-                return str(self)
-            case Qt.ForegroundRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin'):
-                    if sibling._origin == FieldOrigin.INHERITED:
-                        return QBrush(INHERITED_FG)
-                    if sibling._origin in PINNED:
-                        return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
 
-    def _on_value_changed(self, value):
-        if self._value == value:
-            return
-        self._value = value
-        item = _sibling(self, 0)
-        item._on_value_changed(value)
+class _Slot:
+    """Column 0 of a row: what the row holds (a key in an object, an index
+    in an array), its origin and its colours. Mixed in first, before
+    ``QStandardItem`` and ``QObject``; the class gives ``change``."""
 
-    def _on_context_menu(self, position):
-        sibling = _sibling(self, 0)
-        return sibling._on_context_menu(position)
+    _origin: FieldOrigin
 
-    def to_json(self):
-        return self._value
-
-
-class FieldBasicItem(QStandardItem, QObject):
-    change = Signal(object)
-
-    def __init__(self, key: str, origin: FieldOrigin = FieldOrigin.LOCAL):
+    def _init_slot(self, origin: FieldOrigin, *, editable: bool, container: bool):
         QStandardItem.__init__(self)
         QObject.__init__(self)
-
-        # Members
-        self._key = key
         self._origin = origin
-
-        # Inherited fields are read-only
-        if origin == FieldOrigin.INHERITED:
+        if not editable or origin == FieldOrigin.INHERITED:
             self.setEditable(False)
-        else:
-            # Enable drag for non-inherited field items
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled
+        if origin != FieldOrigin.INHERITED:
+            flags = self.flags() | Qt.ItemIsDragEnabled
+            if container:
+                flags |= Qt.ItemIsDropEnabled
             self.setFlags(flags)
+
+    def _label(self) -> str:
+        raise NotImplementedError
+
+    def data(self, role=None):
+        match role:
+            case Qt.DisplayRole:
+                return f"{self._label()}:"
+            case Qt.ForegroundRole:
+                return _origin_brush(self._origin)
+            case Qt.FontRole:
+                return _origin_font(self._origin)
+            case _:
+                return super().data(role)
+
+
+class _KeySlot(_Slot):
+    """A row under a key of an object (the model, a ``FieldObjectItem`` or
+    an ``IndexObjectItem``): its key is its label and can be renamed."""
+
+    _key: str
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._key
 
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._key
-            case Qt.DisplayRole:
-                return f"{self._key}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
+    def _label(self) -> str:
+        return self._key
 
-    def _on_key_changed(self, to_key):
+    def data(self, role=None):
+        if role == Qt.EditRole:
+            return self._key
+        return super().data(role)
+
+    def _on_key_changed(self, to_key: str):
         _rename_field_key(self, to_key)
+
+    def _on_type_changed(self, new_type):
+        _parent(self)._set_field(self._key, _default_value(new_type))
+
+    def _on_remove(self):
+        _remove_field_action(self.model().parent(), self)
+
+    def _slot_sections(self, menu: QMenu):
+        """Convert, Remove Field and Revert Changes; none on an inherited row."""
+        if self._origin == FieldOrigin.INHERITED:
+            return
+        _change_type_section(menu, self, self._on_type_changed)
+        _remove_field_section(menu, self._on_remove)
+        _revert_field_section(menu, self)
+
+
+class _IndexSlot(_Slot):
+    """A row at an index of an array (a ``FieldArrayItem`` or an
+    ``IndexArrayItem``): its index is its label; it moves among its
+    siblings."""
+
+    _index: int
+
+    def path(self) -> JsonPath:
+        return _parent(self).path() / self._index
+
+    def _label(self) -> str:
+        return str(self._index)
+
+    def data(self, role=None):
+        assert role != Qt.EditRole, f"{type(self).__name__} is not editable"
+        return super().data(role)
+
+    def _on_type_changed(self, new_type):
+        _parent(self)._set_item(self._index, _default_value(new_type))
+
+    def _on_remove(self):
+        _remove_index_action(self.model().parent(), self)
+
+    def _on_reorder_action(self, action):
+        last = len(_parent(self)._items) - 1
+        to_index = {
+            "up": self._index - 1, "down": self._index + 1, "top": 0, "bottom": last,
+        }[action]
+        _parent(self)._move_item(self._index, to_index)
+
+    def _slot_sections(self, menu: QMenu):
+        """Move, Convert and Remove Item."""
+        _reorder_index_section(menu, self, self._on_reorder_action)
+        _change_type_section(menu, self, self._on_type_changed)
+        _remove_index_section(menu, self._on_remove)
+
+
+class FieldBasicItem(_KeySlot, QStandardItem, QObject):
+    change = Signal(object)
+
+    def __init__(self, key: str, origin: FieldOrigin = FieldOrigin.LOCAL):
+        self._init_slot(origin, editable=True, container=False)
+        self._key = key
 
     def _on_value_changed(self, value: JsonValue):
         # When overriding an inherited field, change origin to LOCAL
         if self._origin == FieldOrigin.INHERITED:
             self._origin = FieldOrigin.LOCAL
             _propagate_origin_to_local(self)
-        self.change.emit(
-            _change_field_update(_parent(self).path(), self._key, value)
-        )
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_field(self._key, _default_value(new_type))
-
-    def _on_modify_action(self, action):
-        match action:
-            case "remove":
-                view = self.model().parent()
-                return _remove_field_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
+        self.change.emit(_change_field_update(_parent(self).path(), self._key, value))
 
     def _on_context_menu(self, position):
         if self._origin == FieldOrigin.INHERITED:
             return
         menu = QMenu()
-        _change_type_section(menu, self, self._on_type_changed)
-        _remove_field_section(menu, self._on_modify_action)
-        _revert_field_section(menu, self)
+        self._slot_sections(menu)
         menu.exec_(position)
 
     def to_json(self):
-        value_item = _sibling(self, 1)
-        return value_item.to_json()
+        return _sibling(self, 1).to_json()
+
+
+class IndexBasicItem(_IndexSlot, QStandardItem, QObject):
+    change = Signal(object)
+
+    def __init__(self, index: int, origin: FieldOrigin = FieldOrigin.LOCAL):
+        self._init_slot(origin, editable=False, container=False)
+        self._index = index
+
+    def _on_value_changed(self, value: JsonValue):
+        # When overriding an inherited item, change origin to LOCAL
+        if self._origin == FieldOrigin.INHERITED:
+            self._origin = FieldOrigin.LOCAL
+            _propagate_origin_to_local(self)
+        self.change.emit(_change_index_update(_parent(self).path(), self._index, value))
+
+    def _on_context_menu(self, position):
+        menu = QMenu()
+        self._slot_sections(menu)
+        menu.exec_(position)
+
+    def to_json(self):
+        return _sibling(self, 1).to_json()
 
 
 class _ObjectRows:
     """The row operations of a JSON object's item, keyed by field name:
     ``FieldObjectItem`` (an object under a key) and ``IndexObjectItem``
     (an object in an array). The class gives ``change``, ``_fields``,
-    ``_origin`` and ``path()``."""
+    ``_inherited_data``, ``_origin`` and ``path()``; every row is a
+    :class:`_KeySlot`."""
+
+    def __contains__(self, key: str):
+        assert isinstance(key, str), f"Expected str, got {type(key)}"
+        return key in self._fields
+
+    def _refresh_fields(self):
+        """``_fields`` in row order."""
+        self._fields = {
+            self.child(row, 0)._key: self.child(row, 0) for row in range(self.rowCount())
+        }
 
     def _add_field(
         self,
@@ -699,12 +668,7 @@ class _ObjectRows:
         self._fields[key] = field_item
 
         # Rebuild _fields in row order (del + re-add pushed the key to the end)
-        new_fields = {}
-        for row in range(self.rowCount()):
-            child = self.child(row, 0)
-            if hasattr(child, '_key'):
-                new_fields[child._key] = child
-        self._fields = new_fields
+        self._refresh_fields()
 
         # Emit the change signal
         if not notify:
@@ -770,12 +734,7 @@ class _ObjectRows:
         self.insertRow(to_row, row_items)
 
         # Rebuild _fields dict in new order
-        new_fields = {}
-        for row in range(self.rowCount()):
-            child = self.child(row, 0)
-            if hasattr(child, '_key'):
-                new_fields[child._key] = child
-        self._fields = new_fields
+        self._refresh_fields()
 
         # Emit change signal
         if not notify:
@@ -795,7 +754,26 @@ class _ArrayRows:
     """The row operations of a JSON array's item, by index:
     ``FieldArrayItem`` (an array under a key) and ``IndexArrayItem`` (an
     array in an array). The class gives ``change``, ``_items``,
-    ``_origin`` and ``path()``."""
+    ``_origin`` and ``path()``; every row is an :class:`_IndexSlot`."""
+
+    def set_value(self, values: list[JsonValue]):
+        # Clear existing items
+        for index in reversed(range(self.rowCount())):
+            index_item = self._items[index]
+            index_item.change.disconnect(self.change)
+            self.removeRow(index)
+        self._items.clear()
+
+        # If parent is INHERITED, all children are INHERITED too
+        origin = FieldOrigin.INHERITED if self._origin == FieldOrigin.INHERITED else FieldOrigin.LOCAL
+
+        # Add the items to the array
+        for value in values:
+            self._add_item(value, origin, notify=False)
+
+    def _reindex(self):
+        for index, item in enumerate(self._items):
+            item._index = index
 
     def _add_item(
         self,
@@ -847,41 +825,6 @@ class _ArrayRows:
             return
         self.change.emit(_change_index_update(self.path(), index, value))
 
-    def _reorder_item(
-        self, from_index: int, to_index: int, notify: bool = True
-    ):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        assert abs(from_index - to_index) == 1, (
-            f"Invalid reorder indices: {from_index} -> {to_index}"
-        )
-
-        # Move the item in the model
-        to_item = self._items[to_index]
-        from_item = self._items.pop(from_index)
-        self._items.insert(to_index, from_item)
-        row = self.takeRow(from_index)
-        self.insertRow(to_index, row)
-
-        # Re-index the items
-        for index, item in enumerate(self._items):
-            item._index = index
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(
-            _change_index_reorder(
-                self.path(),
-                from_index,
-                to_index,
-                from_item.to_json(),
-                to_item.to_json(),
-            )
-        )
-
     def _remove_item(self, index: int, notify: bool = True):
         # When modifying an inherited container, change origin to LOCAL
         if notify and self._origin == FieldOrigin.INHERITED:
@@ -893,9 +836,7 @@ class _ArrayRows:
         self.removeRow(index)
         del self._items[index]
 
-        # Re-index the items
-        for position, item in enumerate(self._items):
-            item._index = position
+        self._reindex()
 
         # Emit the item removed signal
         if not notify:
@@ -903,7 +844,7 @@ class _ArrayRows:
         self.change.emit(_change_index_remove(self.path(), index))
 
     def _move_item(self, from_index: int, to_index: int, notify: bool = True):
-        """Move item from from_index to to_index (can be non-adjacent)."""
+        """Move the item at ``from_index`` so it ends at ``to_index``."""
         if from_index == to_index:
             return
 
@@ -919,14 +860,10 @@ class _ArrayRows:
         self._items.pop(from_index)
         row = self.takeRow(from_index)
 
-        # Insert at new position (adjust if moving down)
-        insert_idx = to_index if from_index > to_index else to_index
-        self._items.insert(insert_idx, from_item)
-        self.insertRow(insert_idx, row)
-
-        # Re-index all items
-        for index, item in enumerate(self._items):
-            item._index = index
+        # Insert at its new position
+        self._items.insert(to_index, from_item)
+        self.insertRow(to_index, row)
+        self._reindex()
 
         # Emit change signal
         if not notify:
@@ -942,7 +879,7 @@ class _ArrayRows:
         )
 
 
-class FieldObjectItem(_ObjectRows, QStandardItem, QObject):
+class FieldObjectItem(_KeySlot, _ObjectRows, QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(
@@ -951,51 +888,10 @@ class FieldObjectItem(_ObjectRows, QStandardItem, QObject):
         origin: FieldOrigin = FieldOrigin.LOCAL,
         inherited_data: dict = None
     ):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Members
+        self._init_slot(origin, editable=True, container=True)
         self._key = key
-        self._origin = origin
         self._inherited_data = inherited_data or {}
         self._fields = dict()
-
-        # Inherited fields are read-only
-        if origin == FieldOrigin.INHERITED:
-            self.setEditable(False)
-        else:
-            # Enable drag (as field) and drop (as object container)
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._key
-
-    def __contains__(self, key: str):
-        assert isinstance(key, str), f"Expected str, got {type(key)}"
-        return key in self._fields
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._key
-            case Qt.DisplayRole:
-                return f"{self._key}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
 
     def set_value(self, values: dict[str, JsonValue], inherited_data: dict = None):
         # Clear existing fields
@@ -1032,29 +928,13 @@ class FieldObjectItem(_ObjectRows, QStandardItem, QObject):
 
             self._add_field(key, value, origin, inherited_value, notify=False)
 
-    def _on_key_changed(self, to_key: str):
-        _rename_field_key(self, to_key)
-
-    def _on_modify_action(self, action):
-        view = self.model().parent()
-        match action:
-            case "add":
-                return _add_field_action(view, self)
-            case "remove":
-                return _remove_field_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_field(self._key, _default_value(new_type))
+    def _on_add(self):
+        _add_field_action(self.model().parent(), self)
 
     def _on_context_menu(self, position):
         menu = QMenu()
-        _add_field_section(menu, self._on_modify_action)
-        if self._origin != FieldOrigin.INHERITED:
-            _change_type_section(menu, self, self._on_type_changed)
-            _remove_field_section(menu, self._on_modify_action)
-            _revert_field_section(menu, self)
+        _add_field_section(menu, self._on_add)
+        self._slot_sections(menu)
         menu.exec_(position)
 
     def to_json(self):
@@ -1066,247 +946,45 @@ class FieldObjectItem(_ObjectRows, QStandardItem, QObject):
         }
 
 
-class FieldArrayItem(_ArrayRows, QStandardItem, QObject):
+class FieldArrayItem(_KeySlot, _ArrayRows, QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(self, key: str, origin: FieldOrigin = FieldOrigin.LOCAL):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Members
+        self._init_slot(origin, editable=True, container=True)
         self._key = key
-        self._origin = origin
         self._items = list()
 
-        # Inherited fields are read-only
-        if origin == FieldOrigin.INHERITED:
-            self.setEditable(False)
-        else:
-            # Enable drag (as field) and drop (for array items)
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._key
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._key
-            case Qt.DisplayRole:
-                return f"{self._key}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
-
-    def set_value(self, values: list[JsonValue]):
-        # Clear existing items
-        for index in reversed(range(self.rowCount())):
-            index_item = self._items[index]
-            index_item.change.disconnect(self.change)
-            self.removeRow(index)
-        self._items.clear()
-
-        # If parent is INHERITED, all children are INHERITED too
-        origin = FieldOrigin.INHERITED if self._origin == FieldOrigin.INHERITED else FieldOrigin.LOCAL
-
-        # Add the items to the array
-        for value in values:
-            self._add_item(value, origin, notify=False)
-
-    def _on_key_changed(self, to_key):
-        _rename_field_key(self, to_key)
-
-    def _on_modify_action(self, action):
-        match action:
-            case "add":
-                # Infer type from existing items (inherited or local)
-                if self._items:
-                    first_value = self._items[0].to_json()
-                    default = _default_value(type(first_value))
-                else:
-                    default = _default_value(None)
-                return self._add_item(default)
-            case "remove":
-                view = self.model().parent()
-                return _remove_field_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_field(self._key, _default_value(new_type))
+    def _on_add(self):
+        # Infer type from existing items (inherited or local)
+        first = self._items[0].to_json() if self._items else None
+        # a null first item seeds null (_default_value takes None, not NoneType)
+        self._add_item(_default_value(None if first is None else type(first)))
 
     def _on_context_menu(self, position):
         menu = QMenu()
-        _add_index_section(menu, self._on_modify_action)
-        if self._origin != FieldOrigin.INHERITED:
-            _change_type_section(menu, self, self._on_type_changed)
-            _remove_field_section(menu, self._on_modify_action)
-            _revert_field_section(menu, self)
+        _add_index_section(menu, self._on_add)
+        self._slot_sections(menu)
         menu.exec_(position)
 
     def to_json(self):
         return [index_item.to_json() for index_item in self._items]
 
 
-class IndexBasicItem(QStandardItem, QObject):
+class IndexObjectItem(_IndexSlot, _ObjectRows, QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(self, index: int, origin: FieldOrigin = FieldOrigin.LOCAL):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Settings
-        self.setEditable(False)
-
-        # Members
+        self._init_slot(origin, editable=False, container=True)
         self._index = index
-        self._origin = origin
-
-        # Enable drag for non-inherited items
-        if origin != FieldOrigin.INHERITED:
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._index
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                assert False, "IndexBasicItem is not editable"
-            case Qt.DisplayRole:
-                return f"{self._index}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
-
-    def _on_value_changed(self, value: JsonValue):
-        # When overriding an inherited field, change origin to LOCAL
-        if self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-            _propagate_origin_to_local(self)
-        self.change.emit(
-            _change_index_update(_parent(self).path(), self._index, value)
-        )
-
-    def _on_reorder_action(self, action):
-        def _to_index(action):
-            match action:
-                case "up":
-                    return self._index - 1
-                case "down":
-                    return self._index + 1
-                case "top":
-                    return 0
-                case "bottom":
-                    return len(_parent(self)._items) - 1
-
-        _parent(self)._reorder_item(self._index, _to_index(action))
-
-    def _on_modify_action(self, action):
-        match action:
-            case "remove":
-                view = self.model().parent()
-                return _remove_index_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_item(self._index, _default_value(new_type))
-
-    def _on_context_menu(self, position):
-        menu = QMenu()
-        _reorder_index_section(menu, self, self._on_reorder_action)
-        _change_type_section(menu, self, self._on_type_changed)
-        _remove_index_section(menu, self._on_modify_action)
-        menu.exec_(position)
-
-    def to_json(self):
-        value_item = _sibling(self, 1)
-        return value_item.to_json()
-
-
-class IndexObjectItem(_ObjectRows, QStandardItem, QObject):
-    change = Signal(object)
-
-    def __init__(self, index: int, origin: FieldOrigin = FieldOrigin.LOCAL):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Settings
-        self.setEditable(False)
-
-        # Members
-        self._index = index
-        self._origin = origin
+        self._inherited_data = {}  # an object in an array inherits nothing by key
         self._fields = dict()
-
-        # Enable drag (as array item) and drop (as object container)
-        if origin != FieldOrigin.INHERITED:
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._index
-
-    def __contains__(self, key: str):
-        assert isinstance(key, str), f"Expected str, got {type(key)}"
-        return key in self._fields
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                assert False, "IndexObjectItem is not editable"
-            case Qt.DisplayRole:
-                return f"{self._index}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
 
     def set_value(self, values: dict[str, JsonValue]):
         # Clear existing fields
         for key in self._fields.keys():
             field_item = self._fields[key]
             field_item.change.disconnect(self.change)
-            index = field_item.row()
-            self.removeRow(index)
+            self.removeRow(field_item.row())
         self._fields.clear()
 
         # If parent is INHERITED, all children are INHERITED too
@@ -1316,39 +994,13 @@ class IndexObjectItem(_ObjectRows, QStandardItem, QObject):
         for key, value in values.items():
             self._add_field(key, value, origin, notify=False)
 
-    def _on_reorder_action(self, action):
-        def _to_index(action):
-            match action:
-                case "up":
-                    return self._index - 1
-                case "down":
-                    return self._index + 1
-                case "top":
-                    return 0
-                case "bottom":
-                    return len(_parent(self)._items) - 1
-
-        _parent(self)._reorder_item(self._index, _to_index(action))
-
-    def _on_modify_action(self, action):
-        view = self.model().parent()
-        match action:
-            case "add":
-                return _add_field_action(view, self)
-            case "remove":
-                return _remove_index_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_item(self._index, _default_value(new_type))
+    def _on_add(self):
+        _add_field_action(self.model().parent(), self)
 
     def _on_context_menu(self, position):
         menu = QMenu()
-        _add_field_section(menu, self._on_modify_action)
-        _reorder_index_section(menu, self, self._on_reorder_action)
-        _change_type_section(menu, self, self._on_type_changed)
-        _remove_index_section(menu, self._on_modify_action)
+        _add_field_section(menu, self._on_add)
+        self._slot_sections(menu)
         menu.exec_(position)
 
     def to_json(self):
@@ -1358,99 +1010,21 @@ class IndexObjectItem(_ObjectRows, QStandardItem, QObject):
         }
 
 
-class IndexArrayItem(_ArrayRows, QStandardItem, QObject):
+class IndexArrayItem(_IndexSlot, _ArrayRows, QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(self, index: int, origin: FieldOrigin = FieldOrigin.LOCAL):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Settings
-        self.setEditable(False)
-
-        # Members
+        self._init_slot(origin, editable=False, container=True)
         self._index = index
-        self._origin = origin
         self._items = list()
 
-        # Enable drag for non-inherited items, drop for array containers
-        if origin != FieldOrigin.INHERITED:
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._index
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                assert False, "IndexArrayItem is not editable"
-            case Qt.DisplayRole:
-                return f"{self._index}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
-
-    def set_value(self, values: list[JsonValue]):
-        # Clear existing items
-        for index in reversed(range(self.rowCount())):
-            index_item = self._items[index]
-            index_item.change.disconnect(self.change)
-            self.removeRow(index)
-        self._items.clear()
-
-        # If parent is INHERITED, all children are INHERITED too
-        origin = FieldOrigin.INHERITED if self._origin == FieldOrigin.INHERITED else FieldOrigin.LOCAL
-
-        # Add the items to the array
-        for value in values:
-            self._add_item(value, origin, notify=False)
-
-    def _on_reorder_action(self, action):
-        def _to_index(action):
-            match action:
-                case "up":
-                    return self._index - 1
-                case "down":
-                    return self._index + 1
-                case "top":
-                    return 0
-                case "bottom":
-                    return len(_parent(self)._items) - 1
-
-        _parent(self)._reorder_item(self._index, _to_index(action))
-
-    def _on_modify_action(self, action):
-        match action:
-            case "add":
-                return self._add_item(_default_value(None))
-            case "remove":
-                view = self.model().parent()
-                return _remove_index_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_item(self._index, _default_value(new_type))
+    def _on_add(self):
+        self._add_item(_default_value(None))
 
     def _on_context_menu(self, position):
         menu = QMenu()
-        _add_index_section(menu, self._on_modify_action)
-        _reorder_index_section(menu, self, self._on_reorder_action)
-        _change_type_section(menu, self, self._on_type_changed)
-        _remove_index_section(menu, self._on_modify_action)
+        _add_index_section(menu, self._on_add)
+        self._slot_sections(menu)
         menu.exec_(position)
 
     def to_json(self):

@@ -21,7 +21,8 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from tumblepipe.cleanup.core import CategoryPlan, Plan, human
+from tumblepipe.cleanup.core import CategoryPlan, Plan
+from tumblepipe.util.text import human_bytes
 
 #: A note that only says what was read starts so.
 INFO_PREFIX = 'Read '
@@ -149,7 +150,7 @@ def overview(plan: Plan) -> Overview:
 
 
 def headline(view: Overview) -> str:
-    return f'{human(view.size)} to free' if view.to_delete else 'Nothing to delete'
+    return f'{human_bytes(view.size)} to free' if view.to_delete else 'Nothing to delete'
 
 
 def subline(view: Overview) -> str:
@@ -164,7 +165,7 @@ def delete_label(view: Overview | None) -> str:
     """The Delete button's text."""
     if view is None or not view.to_delete:
         return 'Delete…'
-    return f'Delete {view.to_delete} item(s), {human(view.size)}…'
+    return f'Delete {view.to_delete} item(s), {human_bytes(view.size)}…'
 
 
 def warnings(view: Overview) -> tuple[tuple[str, str], ...]:
@@ -176,7 +177,7 @@ def warnings(view: Overview) -> tuple[tuple[str, str], ...]:
 def confirm_lines(view: Overview) -> tuple[str, ...]:
     """What the confirmation lists: one line per category that deletes."""
     return tuple(
-        f'{category.title}: {category.to_delete} {category.noun}(s), {human(category.size)}'
+        f'{category.title}: {category.to_delete} {category.noun}(s), {human_bytes(category.size)}'
         for category in view.categories if category.to_delete
     )
 
@@ -218,10 +219,10 @@ class Row:
 
 def _reason_row(category: CategoryOverview, reason: Reason) -> Row:
     if reason.prune:
-        return Row((reason.reason, f'{reason.count:,}', f'{reason.count:,}', human(reason.size)),
+        return Row((reason.reason, f'{reason.count:,}', f'{reason.count:,}', human_bytes(reason.size)),
                    tip=f'{plural(reason.count, category.noun)} go: {reason.reason}')
     return Row((reason.reason, f'{reason.count:,}', 'kept', ''), TONE_DIM,
-               tip=f'{plural(reason.count, category.noun)} stay ({human(reason.size)}): {reason.reason}')
+               tip=f'{plural(reason.count, category.noun)} stay ({human_bytes(reason.size)}): {reason.reason}')
 
 
 def biggest(groups: tuple[Group, ...], detail: int = DETAIL) -> tuple[tuple[Group, ...], Group | None]:
@@ -244,9 +245,9 @@ def category_row(category: CategoryOverview, *, detail: int = DETAIL) -> Row:
         ))
     if category.groups:
         shown, rest = biggest(category.groups, detail)
-        group_rows = [Row((g.name, '', f'{g.count:,}', human(g.size)), tip=g.name) for g in shown]
+        group_rows = [Row((g.name, '', f'{g.count:,}', human_bytes(g.size)), tip=g.name) for g in shown]
         if rest is not None:
-            group_rows.append(Row((rest.name, '', f'{rest.count:,}', human(rest.size)), TONE_DIM))
+            group_rows.append(Row((rest.name, '', f'{rest.count:,}', human_bytes(rest.size)), TONE_DIM))
         children.append(Row(
             ('To delete, biggest first', '', '', ''), TONE_DIM,
             tip='What goes, by entity or folder, the biggest first',
@@ -264,10 +265,10 @@ def category_row(category: CategoryOverview, *, detail: int = DETAIL) -> Row:
         ))
     found = plural(category.found, category.noun)
     return Row(
-        (category.title, found, f'{category.to_delete:,}', human(category.size) if category.to_delete else '—'),
+        (category.title, found, f'{category.to_delete:,}', human_bytes(category.size) if category.to_delete else '—'),
         TONE_WARNING if category.warnings else TONE_HEADING,
-        tip=f'{found}: {category.to_delete:,} to delete ({human(category.size)}), '
-            f'{category.kept:,} kept ({human(category.kept_size)})',
+        tip=f'{found}: {category.to_delete:,} to delete ({human_bytes(category.size)}), '
+            f'{category.kept:,} kept ({human_bytes(category.kept_size)})',
         children=tuple(children),
         # A category whose listing warns opens, so the warning is in view.
         expanded=bool(category.warnings),
@@ -287,7 +288,7 @@ def deleted_rows(plan: Plan, results: dict[str, tuple[int, int, list[str]]]) -> 
         if not removed and not errors:
             continue
         out.append(Row(
-            (category.title, '', f'{removed:,} deleted', human(removed_bytes)),
+            (category.title, '', f'{removed:,} deleted', human_bytes(removed_bytes)),
             TONE_ERROR if errors else TONE_HEADING,
             children=tuple(Row((error, '', '', ''), TONE_ERROR, tip=error) for error in errors),
             expanded=bool(errors),

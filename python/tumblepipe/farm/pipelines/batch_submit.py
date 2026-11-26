@@ -15,14 +15,13 @@ the dialog's.
 """
 
 from dataclasses import dataclass
-from tempfile import TemporaryDirectory
-from pathlib import Path
 import logging
 
 from tumblepipe.api import (
     path_str,
     get_user_name,
-    api
+    api,
+    project_temp_dir,
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import (
@@ -31,7 +30,7 @@ from tumblepipe.config.channels import (
     read_channel_names,
 )
 from tumblepipe.config.department import (
-    applied_departments, department_names_up_to, get_disabled_departments,
+    get_disabled_departments,
     list_departments,
 )
 from tumblepipe.farm.backend import get_farm
@@ -91,40 +90,19 @@ def _build_render_overrides(settings: dict, is_turntable: bool = False) -> dict:
     return overrides
 
 
-def publish_department_names(
-    settings: dict, department_names: list[str], disabled=(),
-) -> tuple[list[str], bool]:
-    """``(departments to publish in pool order, whether to skip an up-to-date prefix)``.
-
-    Two spellings, from two eras of the dialog:
-
-    * ``pub_departments`` — the grid's: exactly the ticked departments, in
-      pool order. The grid shows what is stale and the artist picked, so
-      nothing is skipped behind their back.
-    * ``pub_department`` — the old form's: every department up to this one,
-      skipping the up-to-date ones at the front of the chain.
-
-    ``disabled`` are the departments turned off on the entity (#64): the
-    "up to" chain walks past them (one ticked explicitly was refused before
-    this, ``farm.specs.submission``).
-    """
-    chosen = settings.get('pub_departments')
-    if chosen is not None:
-        unknown = [name for name in chosen if name not in department_names]
-        if unknown:
-            raise BatchSubmitError(
-                f"Invalid publish department(s): {', '.join(unknown)}"
-            )
-        wanted = set(chosen)
-        return [name for name in department_names if name in wanted], False
-    pub_department = settings.get('pub_department')
-    if pub_department is None:
-        raise BatchSubmitError("Publish department not specified")
-    if pub_department not in department_names:
-        raise BatchSubmitError(f"Invalid publish department: {pub_department}")
-    return applied_departments(
-        department_names_up_to(department_names, pub_department), disabled,
-    ), True
+def publish_department_names(settings: dict, department_names: list[str]) -> list[str]:
+    """The ticked departments (``pub_departments``) in pool order. The grid
+    shows what is stale and the artist picked, so nothing is skipped behind
+    their back; a department turned off on the entity was refused before
+    this (``farm.specs.submission``)."""
+    chosen = settings['pub_departments']
+    unknown = [name for name in chosen if name not in department_names]
+    if unknown:
+        raise BatchSubmitError(
+            f"Invalid publish department(s): {', '.join(unknown)}"
+        )
+    wanted = set(chosen)
+    return [name for name in department_names if name in wanted]
 
 
 def _log_preview_warnings(entity_uri, kind: str, preview) -> None:
@@ -242,12 +220,10 @@ def _check_preview_department(kind: str, name, department_names, renderable_name
 @dataclass(frozen=True)
 class PublishPlan:
     """The publish chain: ``departments`` in pool order, each after the one
-    before; ``skip_up_to_date`` (the old "up to" spelling) skips an
-    up-to-date prefix (``publish_department_names``)."""
+    before."""
     pool: str
     priority: int
     departments: tuple[str, ...]
-    skip_up_to_date: bool
 
 
 @dataclass(frozen=True)
@@ -311,7 +287,7 @@ def _kinds(settings: dict) -> tuple[str, ...]:
         ('publish', settings['publish']),
         ('render', settings['render']),
         ('playblast', settings['playblast']),
-        ('comp', settings.get('comp', False)),
+        ('comp', settings['comp']),
     )
     return tuple(kind for kind, on in wanted if on)
 
@@ -351,9 +327,8 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
         post_roll = settings['post_roll']
         batch_size = settings['batch_size']
         # The Step (Remy, 2026-11-17): every Nth frame of the range, or of
-        # each Frame List range, from its first. Default 1, what a caller
-        # from before it got.
-        render_step = settings.get('render_step', 1)
+        # each Frame List range, from its first.
+        render_step = settings['render_step']
         if isinstance(render_step, bool) or not isinstance(render_step, int) or render_step < 1:
             raise BatchSubmitError(
                 f"Invalid render step for {entity_uri}: {render_step!r} (a whole "
@@ -376,10 +351,9 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
             )
 
     # The re-comp's schedule and frames (specs.composite.valid_recomp). It
-    # posts to the comp channel, as an export_comp's submit does. Step and
-    # preview frames default to what a v1.98.0 caller got (every frame, no
-    # preview); a first or last frame is sent only when the artist set one
-    # (a submit_settings override field), else the comp follows the range.
+    # posts to the comp channel, as an export_comp's submit does. A first
+    # or last frame is sent only when the artist set one (a submit_settings
+    # override field), else the comp follows the range.
     comp_block = None
     if do_comp:
         comp_block = dict(
@@ -388,8 +362,8 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
             batch_size=settings['comp_batch_size'],
             copy_to_edit=settings['comp_copy_to_edit'],
             channel_name='comp',
-            step_size=settings.get('comp_step', 1),
-            preview_frames=settings.get('comp_preview', False),
+            step_size=settings['comp_step'],
+            preview_frames=settings['comp_preview'],
         )
         for key in ('first_frame', 'last_frame'):
             if settings.get(f'comp_{key}') is not None:
@@ -460,11 +434,9 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
         turntable_frames = turntable.farm_frames()
         first_frame, last_frame = turntable_frames.first, turntable_frames.last
         pre_roll = post_roll = 0
-        if render_step != 1:
-            raise BatchSubmitError(
-                f"{entity_uri}: an asset's turntable renders on the studio's "
-                f"step ({turntable_frames.step}); set the render step to 1"
-            )
+        problems = submission.turntable_problems(settings, turntable_frames.step)
+        if problems:
+            raise BatchSubmitError(f"{entity_uri}: {problems[0]}")
         render_step = turntable_frames.step
 
     if do_render and (first_frame is None or last_frame is None):
@@ -494,12 +466,6 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
         cut_range = [first_frame, last_frame]
         first_frame = render_frame_range.first_frame
         last_frame = render_frame_range.last_frame
-        frame_list_text = settings.get('frame_list', '')
-        if asset_turntable and frame_list_text and frame_list_text.strip():
-            raise BatchSubmitError(
-                f"{entity_uri}: an asset's turntable renders the studio's frames; "
-                "clear the frame list"
-            )
 
     # What a Comp alone follows: the renders on disk (#43), else the shot.
     rendered = shot = None
@@ -528,7 +494,7 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
         # Into version (#92): the listed frames go into existing versions,
         # which stay as published as they were.
         repair_entry = _plan_repair(
-            entity_uri, settings.get('into_version', repair_spec.TARGET_NEW),
+            entity_uri, settings['into_version'],
             listed, channels, render_department, denoise,
             preview='partial_render' in render_task_keys, step=render_step,
             turntable=asset_turntable,
@@ -580,7 +546,7 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
         preview_entry = {}
         if 'partial_render' in render_task_keys:
             render_preview = preview_frames.parse(
-                settings.get('preview_frame_list', ''), first_frame, last_frame,
+                settings['preview_frame_list'], first_frame, last_frame,
                 render_step,
             )
             if frame_ranges_entry:
@@ -626,7 +592,7 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
                 raise BatchSubmitError(f"{entity_uri}: {problems[0]}")
         if comp_block['preview_frames']:
             comp_preview = preview_frames.parse(
-                settings.get('comp_preview_frame_list', ''), *comp_range,
+                settings['comp_preview_frame_list'], *comp_range,
                 comp_block['step_size'],
             )
             _log_preview_warnings(entity_uri, 'comp', comp_preview)
@@ -642,11 +608,9 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
     department_names = [d.name for d in departments]
     renderable_names = [d.name for d in departments if d.renderable]
 
-    pub_dept_names, skip_up_to_date = [], False
+    pub_dept_names = []
     if do_publish:
-        pub_dept_names, skip_up_to_date = publish_department_names(
-            settings, department_names, disabled
-        )
+        pub_dept_names = publish_department_names(settings, department_names)
     if do_render:
         _check_preview_department(
             'Render', render_department, department_names, renderable_names,
@@ -678,7 +642,6 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
             pool=pub_pool,
             priority=pub_priority,
             departments=tuple(pub_dept_names),
-            skip_up_to_date=skip_up_to_date,
         ) if do_publish else None,
         render=RenderPlan(
             department=render_department,
@@ -722,27 +685,11 @@ def _publish_jobs(plan: EntityPlan, paths, temp_path, jobs, deps) -> str | None:
         return None
     entity_uri = plan.uri
     prev_job_name = None
-    # Exports are checked against the default channel's
-    channel_name = DEFAULT_CHANNEL
     for dept_name in plan.publish.departments:
         if not publish_pipeline.is_submissable(entity_uri, dept_name):
-            # The old "up to" spelling walks the whole chain, and an
-            # entity need not have a workfile in every department.
-            # A department ticked explicitly must have one.
-            if plan.publish.skip_up_to_date:
-                continue
             raise BatchSubmitError(
                 f"No workfile to publish for {entity_uri}/{dept_name}"
             )
-
-        # The old "up to" spelling skips an up-to-date prefix. A
-        # department named explicitly is published regardless.
-        if (
-            plan.publish.skip_up_to_date and prev_job_name is None
-            and not publish_pipeline.is_out_of_date(entity_uri, channel_name, dept_name)
-        ):
-            continue
-
         job_name = f'publish_{dept_name}'
         try:
             job = publish_pipeline.create_publish_job(
@@ -1087,8 +1034,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 - publish: bool - whether to submit publish jobs
                 - render: bool - whether to submit render jobs
                 - playblast: bool - whether to submit a playblast (shots)
-                - Publish section: pub_departments (the ticked departments)
-                                   or pub_department (up to this one),
+                - Publish section: pub_departments (the ticked departments),
                                    pub_pool, pub_priority
                 - Render section: render_department, channels, render_pool,
                                   render_priority, tile_count, pre_roll,
@@ -1109,26 +1055,29 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   Every channel must be one the entity
                                   defines (``list_channels``); an
                                   undefined one raises before any job is
-                                  created. Optional preview_frame_list
-                                  (str, the Preview Frames List,
-                                  ``farm.specs.preview_frames``): the preview's
-                                  frames instead of the 3 check frames;
-                                  empty or omitted keeps the 3. Optional
+                                  created. These are required (Farm
+                                  Submit's resolve_settings always sends
+                                  them; a missing one is a KeyError):
+                                  preview_frame_list (str, the Preview
+                                  Frames List, ``farm.specs.preview_frames``):
+                                  the preview's frames instead of the 3
+                                  check frames; empty keeps the 3.
                                   frame_list (str, the Frame List,
                                   ``farm.specs.frame_ranges``, #84): only
                                   these ranges of the rolled range; one
                                   range renders as First..Last would, two
                                   or more are a multi-range render, never
                                   published (no daily, no Copy to edit, no
-                                  Comp). Shots only. Optional render_step
-                                  (int, default 1): every Nth frame of the
+                                  Comp); empty for none. Shots only.
+                                  render_step (int, 1 for every frame):
+                                  every Nth frame of the
                                   range, or of each Frame List range, from
                                   its first; above 1 a shot's render is a
                                   check render, never published (as a
                                   multi-range one). A turntable takes 1
                                   (it renders on the studio's step).
-                                  Optional into_version (str, default
-                                  '': new versions; ``latest`` or a
+                                  into_version (str, '' for new
+                                  versions; ``latest`` or a
                                   version name, ``farm.specs.repair``,
                                   #92): render the Frame List into that
                                   existing version of every channel,
@@ -1139,7 +1088,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res, pb_look
                                      (specs.playblast.valid_look)
-                - comp: bool (optional, shots) - re-comp the shot's newest
+                - comp: bool (required; shots) - re-comp the shot's newest
                         composite workfile; with render it waits for the
                         full render's denoise, else the render
                 - comp_scene: dict (optional, #80) - comp this workfile
@@ -1147,12 +1096,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                         the submission): {path, exports, aovs}; it reads the
                         render beside it, so needs render with the full range
                 - Comp section: comp_pool, comp_priority, comp_batch_size,
-                                comp_copy_to_edit; optional comp_step
-                                (default 1), comp_preview (default False:
-                                comp first/middle/last first),
-                                comp_preview_frame_list (str, default '':
-                                those frames instead of first/middle/last),
-                                comp_first_frame / comp_last_frame (default:
+                                comp_copy_to_edit, and (required)
+                                comp_step (1 for every frame),
+                                comp_preview (True: comp first/middle/last
+                                first), comp_preview_frame_list (str, those
+                                frames instead of first/middle/last; ''
+                                for them); optional comp_first_frame /
+                                comp_last_frame (default:
                                 the render's range, else the shot's; with a
                                 render, inside the render's)
 
@@ -1198,11 +1148,8 @@ def submit_entity_batch(config: dict) -> list[str]:
     deps = {}  # name -> [dep_names]
 
     # Create temp directory for staging files (used by both publish and render jobs)
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
 
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_path_str:
-        temp_path = Path(temp_path_str)
+    with project_temp_dir() as temp_path:
         paths = {}  # Shared paths dict for bundling files
         last_publish = _publish_jobs(plan, paths, temp_path, jobs, deps)
         after_publish = last_publish is not None and (

@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from tumbletrove.asset_browser.api.errors import CatalogInitError, ConfigError
+from tumbletrove.asset_browser.api.errors import ConfigError
 from tumbletrove.asset_browser.api.types import (
     Asset, AssetDetail, CreationField,
 )
@@ -35,6 +35,7 @@ from . import recipes as recipes
 from .libraries import TAG_KEY as LIBRARY_TAG_KEY
 from . import uris as uris
 from .scene import open_submit_jobs_dialog
+from .types import tag_value
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +85,27 @@ def confirm(title: str, text: str) -> bool:
         QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
     )
     return answer == QMessageBox.Yes
+
+
+def _project_fields(projects, default_proj) -> list:
+    """A creation form's Project dropdown, defaulting to *default_proj*;
+    none when one project is registered (it is the one)."""
+    from tumbletrove.asset_browser.api.catalog import CreationField
+    if len(projects) <= 1:
+        return []
+    return [CreationField(
+        "project", "Project",
+        field_type="dropdown",
+        choices=tuple(projects),
+        default=default_proj,
+    )]
+
+
+def _name_and_project_fields(projects, default_proj) -> list:
+    """A Name field, and the Project dropdown."""
+    from tumbletrove.asset_browser.api.catalog import CreationField
+    return ([CreationField("name", "Name", required=True)]
+            + _project_fields(projects, default_proj))
 
 
 def tell(text: str) -> None:
@@ -300,9 +322,9 @@ class EntityOps:
 
     def _resolve_project_from_tags(self, tags):
         """Extract project name from tags like 'project:growth'."""
-        for t in tags:
-            if t.startswith("project:"):
-                return t.split(":", 1)[1]
+        project = tag_value(tags, "project")
+        if project:
+            return project
         # Single project fallback
         projects = list(self._registry.all())
         if len(projects) == 1:
@@ -331,28 +353,16 @@ class EntityOps:
         default_proj = self._resolve_project_from_tags(tags)
 
         if option_id == recipes.CREATE_OPTION:
-            default_library = next(
-                (t.partition(":")[2] for t in tags
-                 if t.startswith(f"{LIBRARY_TAG_KEY}:")), "")
+            default_library = tag_value(tags, LIBRARY_TAG_KEY)
             return self._recipes.creation_fields(
                 default_proj, projects, default_library)
 
         if option_id == edits.CREATE_OPTION:
-            fields = [CreationField("name", "Name", required=True)]
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            return _name_and_project_fields(projects, default_proj)
 
         if option_id == PLAY_SEQUENCE:
             # No form: the editor opens on the sequence's shots.
-            seq = next(
-                (t.partition(":")[2] for t in tags if t.startswith("sequence:")), "",
-            )
+            seq = tag_value(tags, "sequence")
             if seq:
                 self._playback.play_sequence(default_proj, seq)
             elif self._flat_bucket(default_proj, "shots") is not None:
@@ -370,10 +380,7 @@ class EntityOps:
         if option_id == MULTI_BOARD:
             # Like the Entity Editor: no form, the editor opens instead, on
             # its Multis tab as a board, for the Multis section's context.
-            context = next(
-                (t.partition(":")[2] for t in tags if t.startswith("multi_context:")),
-                "",
-            )
+            context = tag_value(tags, "multi_context")
             if context not in ("shots", "assets"):
                 scope = creation_scope(tags)
                 context = scope if scope in ("shots", "assets") else "shots"
@@ -389,18 +396,14 @@ class EntityOps:
             # this is the moment to open the editor instead of the form,
             # on the Assets tab from an assets scope and Shots otherwise.
             kind = "assets" if creation_scope(tags) == "assets" else "shots"
-            prefix = "category:" if kind == "assets" else "sequence:"
-            group = next(
-                (t.partition(":")[2] for t in tags if t.startswith(prefix)),
-                "",
-            )
+            group = tag_value(tags, "category" if kind == "assets" else "sequence")
             self.open_entity_editor(default_proj, kind, group)
             return []
 
         if option_id == "new_asset" and self._flat_bucket(default_proj, "assets"):
             # A flat asset list: the asset goes into the project's implicit
             # category, filled in by validate_creation and create.
-            return self._name_and_project_fields(projects, default_proj)
+            return _name_and_project_fields(projects, default_proj)
 
         if option_id == "new_asset":
             fields = [
@@ -420,18 +423,12 @@ class EntityOps:
             # URI segments, e.g. ``entity:/assets/CHAR/...``); the
             # case-insensitive fallback only recovers stale lowercase
             # tags persisted by old presets / drag payloads.
-            default_cat = ""
-            for t in tags:
-                if t.startswith("category:"):
-                    tag_val = t.split(":", 1)[1]
-                    if tag_val in cats:
-                        default_cat = tag_val
-                    else:
-                        default_cat = next(
-                            (c for c in cats if c.lower() == tag_val.lower()),
-                            tag_val,
-                        )
-                    break
+            default_cat = tag_value(tags, "category")
+            if default_cat and default_cat not in cats:
+                default_cat = next(
+                    (c for c in cats if c.lower() == default_cat.lower()),
+                    default_cat,
+                )
             fields.append(CreationField(
                 "category", "Category",
                 field_type="dropdown",
@@ -440,14 +437,7 @@ class EntityOps:
                 allow_new=False,
                 readonly=bool(default_cat),
             ))
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            return fields + _project_fields(projects, default_proj)
 
         if option_id == "new_shot":
             fields = [
@@ -458,11 +448,7 @@ class EntityOps:
                 self._buckets.sequences(default_proj)
                 if default_proj else self._buckets.all_sequences()
             )
-            default_seq = ""
-            for t in tags:
-                if t.startswith("sequence:"):
-                    default_seq = t.split(":", 1)[1]
-                    break
+            default_seq = tag_value(tags, "sequence")
             # A flat shot list has no Sequence field: the shot goes into
             # the project's implicit sequence, filled in on create.
             if flat_seq is None:
@@ -482,14 +468,7 @@ class EntityOps:
                 "frame_end", "Frame End",
                 field_type="int", default="1100",
             ))
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            return fields + _project_fields(projects, default_proj)
 
         if option_id == "new_category":
             # The only place free-text category entry survives. Offered
@@ -500,14 +479,7 @@ class EntityOps:
             fields = [
                 CreationField("category", "Category", required=True),
             ]
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            return fields + _project_fields(projects, default_proj)
 
         if option_id == "new_sequence":
             # Symmetric with new_category: creates an empty
@@ -517,14 +489,7 @@ class EntityOps:
             fields = [
                 CreationField("sequence", "Sequence", required=True),
             ]
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            return fields + _project_fields(projects, default_proj)
 
         if option_id == "new_group":
             # A Multi is set up in the Entity Editor: New Multi... opens it
@@ -533,11 +498,7 @@ class EntityOps:
             # or Shots binds the context; anywhere else narrowed to one
             # context picks it. It used to default to "shots" everywhere,
             # so "New Multi" under Assets made a shot Multi.
-            bound_ctx = next(
-                (t.partition(":")[2] for t in tags
-                 if t.startswith("multi_context:")),
-                "",
-            )
+            bound_ctx = tag_value(tags, "multi_context")
             if bound_ctx not in ("shots", "assets"):
                 bound_ctx = ""
             scope = creation_scope(tags)
@@ -545,11 +506,7 @@ class EntityOps:
                 scope if scope in ("shots", "assets") else "shots"
             )
             # Picked on a category or sequence row: offer that one whole.
-            prefix = "category:" if default_ctx == "assets" else "sequence:"
-            group = next(
-                (t.partition(":")[2] for t in tags if t.startswith(prefix)),
-                "",
-            )
+            group = tag_value(tags, "category" if default_ctx == "assets" else "sequence")
             self.open_new_multi(default_proj, default_ctx, group)
             return []
 
@@ -557,30 +514,9 @@ class EntityOps:
             fields = [
                 CreationField("name", "Name", required=True),
             ]
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            return fields + _project_fields(projects, default_proj)
 
         return []
-
-    @staticmethod
-    def _name_and_project_fields(projects, default_proj):
-        """A Name field, and a Project dropdown when several are registered."""
-        from tumbletrove.asset_browser.api.catalog import CreationField
-        fields = [CreationField("name", "Name", required=True)]
-        if len(projects) > 1:
-            fields.append(CreationField(
-                "project", "Project",
-                field_type="dropdown",
-                choices=tuple(projects),
-                default=default_proj,
-            ))
-        return fields
 
     def _flat_fields(self, option_id, fields, proj_name):
         """``(fields, bucket)``: ``fields`` with a flat kind's implicit
@@ -648,7 +584,9 @@ class EntityOps:
 
     def create(self, option_id, fields):
         """Create what the creation dialog describes; the new card's id or
-        None. A failure raises: the browser reports it (TumbleTrove >= 0.48)."""
+        None (a bucket or a Multi has no card to select). A refusal or a
+        failure raises: the browser reports it and opens the form again
+        with what was typed (TumbleTrove >= 0.66, #29)."""
         import hou
 
         # A recipe saved into a library: no project to activate.
@@ -664,8 +602,7 @@ class EntityOps:
             proj_name = projects[0].name
         proj = self._registry.get(proj_name)
         if proj is None:
-            hou.ui.displayMessage(f"Unknown project: {proj_name}")
-            return None
+            raise ValueError(f"Unknown project: {proj_name}")
 
         self._activator.activate(proj)
 
@@ -674,11 +611,7 @@ class EntityOps:
         if option_id == recipes.CREATE_OPTION:
             return self._recipes.create(proj, fields)
 
-        try:
-            client = self._clients.get(proj_name)
-        except CatalogInitError as err:
-            hou.ui.displayMessage(str(err))
-            return None
+        client = self._clients.get(proj_name)
 
         if option_id == edits.CREATE_OPTION:
             return self._edit_ops.create_edit(proj_name, client, fields)
@@ -694,14 +627,13 @@ class EntityOps:
         # ids are ``PROJECT/BUCKET/NAME`` and the kind is read back from
         # whether BUCKET is a category), new names are letters and digits
         # only, and nothing that exists is made twice.
-        def _refused() -> bool:
+        def refuse_problems() -> None:
             problems = creation_check.creation_problems(
                 option_id, fields, self._entity_paths(client),
                 flat=flat_bucket is not None,
             )
             if problems:
-                hou.ui.displayMessage("\n".join(problems.values()))
-            return bool(problems)
+                raise ValueError("\n".join(problems.values()))
 
         # Parent-only entity creation: ``new_category`` and
         # ``new_sequence`` register a 2-segment URI (no asset/shot name)
@@ -711,10 +643,8 @@ class EntityOps:
         if option_id == "new_category":
             category = fields.get("category", "").strip()
             if not category:
-                hou.ui.displayMessage("Category is required.")
-                return None
-            if _refused():
-                return None
+                raise ValueError("Category is required.")
+            refuse_problems()
             client.config.add_entity(uris.entity_category(category), {})
             self._index.invalidate(shots=False)
             return None  # No card to select — empty category
@@ -722,26 +652,21 @@ class EntityOps:
         if option_id == "new_sequence":
             sequence = fields.get("sequence", "").strip()
             if not sequence:
-                hou.ui.displayMessage("Sequence is required.")
-                return None
-            if _refused():
-                return None
+                raise ValueError("Sequence is required.")
+            refuse_problems()
             client.config.add_entity(uris.entity_sequence(sequence), {})
             self._index.invalidate(assets=False)
             return None  # No card to select — empty sequence
 
         name = fields.get("name", "").strip()
         if not name:
-            hou.ui.displayMessage("Name is required.")
-            return None
+            raise ValueError("Name is required.")
 
         if option_id == "new_asset":
             category = fields.get("category", "").strip()
             if not category:
-                hou.ui.displayMessage("Category is required.")
-                return None
-            if _refused():
-                return None
+                raise ValueError("Category is required.")
+            refuse_problems()
             entity_uri = uris.entity_asset(category, name)
             client.config.add_entity(entity_uri, {"name": name})
             self._index.invalidate(shots=False)
@@ -750,10 +675,8 @@ class EntityOps:
         if option_id == "new_shot":
             sequence = fields.get("sequence", "").strip()
             if not sequence:
-                hou.ui.displayMessage("Sequence is required.")
-                return None
-            if _refused():
-                return None
+                raise ValueError("Sequence is required.")
+            refuse_problems()
             frame_start = int(fields.get("frame_start", "1001"))
             frame_end = int(fields.get("frame_end", "1100"))
             entity_uri = uris.entity_shot(sequence, name)
@@ -772,10 +695,7 @@ class EntityOps:
             from tumblepipe.config import groups as grp_mod
             group_uri = uris.group_in_context(context, name)
             if grp_mod.get_group_in(client.config, group_uri) is not None:
-                hou.ui.displayMessage(
-                    f"Multi '{name}' already exists in {context}."
-                )
-                return None
+                raise ValueError(f"Multi '{name}' already exists in {context}.")
             # A Multi covers its context's whole department pool from
             # birth. Coverage is what gives the Multi card its
             # department rows and what redirects a member's rows to
@@ -803,8 +723,7 @@ class EntityOps:
                 name, scn_mod.get_scene_by_uri_in(proj.store(), uris.scene(name)) is not None,
             )
             if problem:
-                hou.ui.displayMessage(problem)
-                return None
+                raise ValueError(problem)
             scn_mod.add_scene_in(proj.store(), name)
             hou.ui.setStatusMessage(
                 f"Created Root: {name}",
@@ -1732,15 +1651,12 @@ class EntityOps:
             raise ValueError(f"Submit Jobs needs one context, got {contexts!r}")
         context = next(iter(contexts))
 
-        # Entity URIs, parallel to the display names.
         entity_uris: list = []
-        names: list[str] = []
         for a in assets:
             uri = self._resolver.uri_for(a.id)
             if uri is None:
                 raise ValueError(f"{a.id} is not a PROJECT/BUCKET/NAME id")
             entity_uris.append(uri)
-            names.append(a.name or a.id.split("/")[-1])
         # The browser path has no "opened from" entity, but the loaded
         # workfile's department is still the one the artist is working in,
         # so it seeds the render department the same way the scene quick
@@ -1750,7 +1666,7 @@ class EntityOps:
             scene_ctx.department_name if scene_ctx is not None else None
         )
         open_submit_jobs_dialog(
-            entity_uris, names, context, department=department,
+            entity_uris, context, department=department,
         )
 
     def import_asset_to_scene(self, detail: AssetDetail) -> None:

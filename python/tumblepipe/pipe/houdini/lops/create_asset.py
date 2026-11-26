@@ -17,6 +17,7 @@ import hou
 
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
+from tumblepipe.pipe.houdini.nodes import button
 
 
 class CreateAsset(EntityNode):
@@ -151,11 +152,13 @@ def on_created(native):
     node._update_labels()
 
 
+@button('Create Asset')
 def select_entity(kwargs):
     """Entity button: pick the asset, or 'from_context'."""
     wrap(kwargs['node']).pick_entity('Select Asset')
 
 
+@button('Create Asset')
 def add_variant(kwargs):
     """'variants' multiparm callback — fires on both add and remove.
 
@@ -171,6 +174,7 @@ def add_variant(kwargs):
     hou.ui.addEventLoopCallback(_sync)
 
 
+@button('Create Asset')
 def on_variant_name(kwargs):
     """A variant was renamed — rename its output node."""
     wrap(kwargs['node']).rename_variant(
@@ -178,6 +182,7 @@ def on_variant_name(kwargs):
     )
 
 
+@button('Create Asset')
 def jump_to_variant(kwargs):
     """Show the row's output node in the network editors."""
     target = wrap(kwargs['node']).variant_output(

@@ -84,7 +84,8 @@ class AssetResolver:
     def project_of(self, asset_id: str) -> ProjectConfig | None:
         """The registered project of an entity id (:meth:`project_for`) or
         a container id (a Multi's ``group:<project>:...``, a scene's), or
-        None."""
+        None. A container id with no ``<project>:<path>`` split raises
+        :class:`~.uris.MalformedCardId` (``containers.parse``)."""
         from . import containers
         ref = containers.parse(asset_id)
         if ref is not None:

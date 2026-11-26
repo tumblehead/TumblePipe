@@ -169,7 +169,7 @@ def main():
     hou.playbar.setFrameRange(1, 3)
     hou.playbar.setPlaybackRange(1, 3)
     hou.setFrame(1)
-    from tumblepipe.pipe.houdini.lops import animate_points
+    from tumblepipe.pipe.houdini.lops import animate_geometry
 
     default = build('default')
     for name, value in PARMS.items():
@@ -178,7 +178,7 @@ def main():
         ok = parm is not None and (abs(found - value) < 1e-9 if isinstance(value, float)
                                    else found == value)
         check(f'the node has {name} with the default', ok, found)
-    stamps = {animate_points.STAMP, animate_points.VERTEX_STAMP, animate_points.PRIM_STAMP}
+    stamps = {animate_geometry.STAMP, animate_geometry.VERTEX_STAMP, animate_geometry.PRIM_STAMP}
     for node, extra in (('static_import', stamps), ('remainder_import', set()),
                         ('full_import', set())):
         pattern = default.node(node).evalParm('attribs')

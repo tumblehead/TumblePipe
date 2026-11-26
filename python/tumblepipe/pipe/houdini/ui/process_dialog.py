@@ -947,7 +947,7 @@ class ProcessDialog(QtWidgets.QDialog):
         """Open the output location for a completed task"""
         import hou
         from tumblepipe.api import path_str
-        from tumblepipe.pipe.paths import latest_export_path, current_staged_path
+        from tumblepipe.pipe.paths import latest_export_path, get_latest_staged_path
 
         try:
             channel = task.channel if task.channel else 'default'
@@ -955,7 +955,7 @@ class ProcessDialog(QtWidgets.QDialog):
             if task.task_type == 'export':
                 location_path = latest_export_path(task.uri, channel, task.department)
             elif task.task_type == 'build':
-                location_path = current_staged_path(task.uri, channel)
+                location_path = get_latest_staged_path(task.uri, channel)
             else:
                 return
 

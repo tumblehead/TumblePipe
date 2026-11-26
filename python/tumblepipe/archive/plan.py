@@ -28,6 +28,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from tumblepipe.archive.inventory import Inventory, Item, Kind
+from tumblepipe.util.text import human_bytes
 
 
 class Profile:
@@ -148,15 +149,6 @@ _NEVER = {
 }
 
 
-def _human_bytes(count: int) -> str:
-    size = float(count)
-    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
-        if size < 1024 or unit == 'TB':
-            return f'{size:.1f} {unit}' if unit != 'B' else f'{int(size)} B'
-        size /= 1024
-    return f'{count} B'
-
-
 def make_plan(
     inventory: Inventory, options: Options, *, scan_references: bool = True,
 ) -> Plan:
@@ -234,7 +226,7 @@ def _add_warnings(plan: Plan) -> None:
     if unknown:
         units = {i.unit or i.rel for i in unknown}
         plan.warnings.append(
-            f'{len(units)} cache version(s) ({_human_bytes(sum(i.size for i in unknown))}) '
+            f'{len(units)} cache version(s) ({human_bytes(sum(i.size for i in unknown))}) '
             'have no record of the workfile that wrote them (cached before '
             'TumblePipe recorded it, or never finished). They are left out; '
             'keep any that cannot be cached again.'
@@ -246,7 +238,7 @@ def _add_warnings(plan: Plan) -> None:
             unmanaged[item.rel.split('/', 1)[0]] += item.size
     if unmanaged:
         listing = ', '.join(
-            f'{name} ({_human_bytes(size)})' for name, size in sorted(unmanaged.items())
+            f'{name} ({human_bytes(size)})' for name, size in sorted(unmanaged.items())
         )
         plan.warnings.append(
             f'Left out as not pipeline data: {listing}. Add a folder to '

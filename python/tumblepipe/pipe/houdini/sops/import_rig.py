@@ -5,6 +5,7 @@ from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import FROM_CONTEXT, EntityNode
 from tumblepipe.pipe.houdini.sops import rename_packed
+from tumblepipe.pipe.houdini.lops import animate_ghost
 from tumblepipe.pipe.paths import (
     get_latest_version_path,
     get_layer_file_name,
@@ -12,6 +13,7 @@ from tumblepipe.pipe.paths import (
     list_version_paths,
 )
 from tumblepipe.pipe.paths.naming import entity_stem
+from tumblepipe.pipe.houdini.nodes import button
 
 
 def latest_rig_version(asset_uri: Uri, channel_name: str) -> str | None:
@@ -176,7 +178,7 @@ def copies_message(asset_uri: Uri, instances: int, on_stage: list[str]) -> str:
     return ' '.join(parts)
 
 
-def _stage_children(stage, asset_uri: Uri) -> list[tuple]:
+def stage_children(stage, asset_uri: Uri) -> list[tuple]:
     """``stage_copies``' ``children`` read from ``stage``."""
     parent_path = '/' + '/'.join(asset_uri.segments[1:-1])
     parent = stage.GetPrimAtPath(parent_path)
@@ -197,7 +199,7 @@ def _stage_children(stage, asset_uri: Uri) -> list[tuple]:
 def copies_warning(stage, asset_uri: Uri, instances: int) -> str:
     """``copies_message`` for a rig import against shot stage ``stage``."""
     return copies_message(
-        asset_uri, instances, stage_copies(asset_uri, _stage_children(stage, asset_uri))
+        asset_uri, instances, stage_copies(asset_uri, stage_children(stage, asset_uri))
     )
 
 
@@ -247,7 +249,7 @@ def announce_warning(message: str) -> None:
 PLACEMENT_CONTROL = 'Main'
 
 
-def _shot_stage(native):
+def shot_stage(native):
     """The stage fed into the th::animate this node sits in, held at the
     start of its shot (its IN_stage_start), None when it is not inside one.
 
@@ -287,7 +289,7 @@ def layout_placement(native, prim_path: str, *, stage=None, start=None):
     from pxr import Usd, UsdGeom
 
     if stage is None:
-        stage = _shot_stage(native)
+        stage = shot_stage(native)
     if stage is None:
         return None
     prim = stage.GetPrimAtPath(prim_path)
@@ -361,7 +363,7 @@ def place_character(sop_node, translate, rotate, scale):
     _warn_unplaced(_place_rigs(sop_node.geometry(), translate, rotate, scale))
 
 
-def _imported_asset_uri(import_node) -> Uri | None:
+def imported_asset_uri(import_node) -> Uri | None:
     entity_uri_raw = import_node.parm('entity').eval()
     if entity_uri_raw == FROM_CONTEXT:
         return ImportRig(import_node).get_entity_uri()
@@ -385,7 +387,7 @@ def place_characters(sop_node):
     from tumblepipe.pipe.houdini.sops import layout_keys_rows
 
     import_node = sop_node.parent()
-    asset_uri = _imported_asset_uri(import_node)
+    asset_uri = imported_asset_uri(import_node)
     geo = sop_node.geometry()
     if asset_uri is None or geo.findPrimAttrib('name') is None:
         return
@@ -395,7 +397,7 @@ def place_characters(sop_node):
     prim_parent_path = '/'.join(asset_uri.segments[1:-1])
 
     keyed = layout_keys_rows.keyed_placement(sop_node)
-    stage = _shot_stage(sop_node)
+    stage = shot_stage(sop_node)
     if stage is None:
         return
     # Characters the stage has no prim for, or stage copies no character
@@ -594,7 +596,7 @@ class ImportRig(EntityNode):
         warning only: a stage that cannot be read gives '', never an error
         that stops the import."""
         try:
-            stage = _shot_stage(self.native())
+            stage = shot_stage(self.native())
             asset_uri = self.get_entity_uri()
             if stage is None or asset_uri is None:
                 return ''
@@ -611,20 +613,16 @@ def on_created(raw_node):
     node._update_labels()
 
 
-def _refresh_ghost(raw_node):
-    """A th::animate's ghost hides the characters whose rigs are imported;
-    it finds rig nodes when it cooks, so tell it about this one."""
-    from tumblepipe.pipe.houdini.lops import animate_ghost
-    animate_ghost.refresh_ghost(raw_node)
-
+@button('Import Rig')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRig(raw_node)
     try:
         announce_warning(node.execute())
     finally:
-        _refresh_ghost(raw_node)
+        animate_ghost.refresh_ghost(raw_node)
 
+@button('Set Scene Copies')
 def set_scene_copies(kwargs):
     """The Set Scene Copies button: write this import's copy count into the
     shot's scene (after a confirm), re-import the shot and import again
@@ -632,6 +630,7 @@ def set_scene_copies(kwargs):
     from tumblepipe.pipe.houdini.sops import scene_copies
     scene_copies.from_import_rig(kwargs)
 
+@button('Import Rig')
 def select(kwargs):
     """Entity button: pick the asset, then import its rig."""
     node = ImportRig(kwargs['node'])
@@ -639,4 +638,4 @@ def select(kwargs):
         try:
             announce_warning(node.execute())
         finally:
-            _refresh_ghost(kwargs['node'])
+            animate_ghost.refresh_ghost(kwargs['node'])

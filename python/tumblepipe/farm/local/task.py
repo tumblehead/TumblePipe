@@ -87,7 +87,7 @@ def clean_env(environ: dict) -> dict:
 def read_env_file(path: Path) -> dict:
     """The job's ``KEY=VALUE`` env file, parsed as the plugin parses it.
 
-    ``apps.deadline.write_job_files`` writes it UTF-8. Jobs written before
+    ``farm.job.write_job_files`` writes it UTF-8. Jobs written before
     that used the submitting process's default encoding: UTF-8 from the Farm
     Submit process (``PYTHONUTF8=1``), the locale's (cp1252) from inside
     Houdini on Windows. So read UTF-8, else the locale's, else cp1252: where

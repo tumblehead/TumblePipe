@@ -48,7 +48,7 @@ config = {
         'pool_name': 'string',
         'priority': 'int',
         'res': ['int', 'int'],
-        'look': {...}                    # optional, specs.playblast.valid_look
+        'look': {...}                    # specs.playblast.valid_look
     }
 }
 
@@ -73,19 +73,13 @@ from tumblepipe.farm.checks import (
     is_int,
     valid_channel_names,
 )
-from tumblepipe.farm.specs.playblast import DEFAULT_LOOK, valid_look
+from tumblepipe.farm.specs.playblast import valid_look
 from tumblepipe.farm.specs.render_pipeline import (
     RENDER_TASK_KEYS,
     valid_cut_range,
     valid_preview_frame_list,
     valid_request,
 )
-
-
-def playblast_look(playblast: dict) -> dict:
-    """The look a collapse config's playblast asks for (``DEFAULT_LOOK``
-    when it was submitted before the look existed)."""
-    return dict(playblast.get('look', DEFAULT_LOOK))
 
 
 def _valid_settings(settings):
@@ -137,8 +131,7 @@ def _valid_playblast(playblast):
     if not check_list(playblast, 'res'): return False
     if len(playblast['res']) != 2: return False
     if not all(is_int(value) for value in playblast['res']): return False
-    # Optional: a collapse job submitted before the look existed has none.
-    if 'look' in playblast and not valid_look(playblast['look']): return False
+    if not valid_look(playblast.get('look')): return False
     return True
 
 

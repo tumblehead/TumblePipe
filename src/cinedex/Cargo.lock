@@ -862,6 +862,7 @@ dependencies = [
  "th_media",
  "th_pipe",
  "th_playlist",
+ "th_window",
  "winit",
  "x11rb",
 ]
@@ -4421,14 +4422,12 @@ name = "th_cleanup_app"
 version = "0.1.0"
 dependencies = [
  "embed-resource",
- "objc2 0.5.3",
- "png",
  "primer",
  "proptest",
  "tempfile",
  "th_cleanup",
  "th_pipe",
- "x11rb",
+ "th_window",
 ]
 
 [[package]]
@@ -4484,6 +4483,16 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "th_window"
+version = "0.1.0"
+dependencies = [
+ "objc2 0.5.3",
+ "png",
+ "proptest",
+ "x11rb",
 ]
 
 [[package]]

@@ -44,19 +44,26 @@ class Root:
 
 @dataclass(frozen=True)
 class ProjectRoots:
+    """A project's roots. ``roots`` are the directories to walk, each once:
+    a purpose ``storage.json`` puts on a path another one already has (say
+    ``export`` on the project folder itself) is walked as that one.
+    ``purposes`` has every purpose, so :meth:`get` finds each."""
     project_path: Path
     config_path: Path
     roots: tuple[Root, ...]
+    purposes: tuple[Root, ...]
 
     @property
     def name(self) -> str:
         return self.project_path.name
 
-    def get(self, purpose: str) -> Root | None:
-        for root in self.roots:
+    def get(self, purpose: str) -> Root:
+        """The root of ``purpose``: ``project``, ``config`` or one of
+        :data:`WALKED_PURPOSES`. Raises KeyError for any other."""
+        for root in self.purposes:
             if root.purpose == purpose:
                 return root
-        return None
+        raise KeyError(purpose)
 
 
 def _is_within(path: Path, parent: Path) -> bool:
@@ -106,11 +113,13 @@ def project_roots(
         Root('project', project_path, project_path.name),
         Root('config', config_path, archive_prefix('config', config_path, project_path)),
     ]
-    seen = {project_path, config_path}
+    purposes = list(roots)
+    walked = {project_path, config_path}
     for purpose in WALKED_PURPOSES:
         path = storage.resolve(Uri.parse(f'{purpose}:/')).resolve()
-        if path in seen:
-            continue
-        seen.add(path)
-        roots.append(Root(purpose, path, archive_prefix(purpose, path, project_path)))
-    return ProjectRoots(project_path, config_path, tuple(roots))
+        root = Root(purpose, path, archive_prefix(purpose, path, project_path))
+        purposes.append(root)
+        if path not in walked:
+            walked.add(path)
+            roots.append(root)
+    return ProjectRoots(project_path, config_path, tuple(roots), tuple(purposes))

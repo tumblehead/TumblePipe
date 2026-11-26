@@ -16,6 +16,7 @@ import hou
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops.import_layer import ImportLayer
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
+from tumblepipe.pipe.houdini.nodes import button
 
 # The embedded th::import_layer, relative to the HDA.
 INNER_IMPORT = 'lopnet/import_layer'
@@ -86,13 +87,16 @@ def variant_prim_path(set_variant_node) -> str:
     return ImportModel(set_variant_node.parent().parent()).variant_prim_path()
 
 
+@button('Import Model')
 def execute(kwargs):
     ImportModel(kwargs['node']).execute()
 
 
+@button('Import Model')
 def open_location(kwargs):
     ImportModel(kwargs['node']).open_location()
 
 
+@button('Import Model')
 def select(kwargs):
     ImportModel(kwargs['node']).pick_entity()

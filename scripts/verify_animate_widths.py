@@ -9,7 +9,7 @@ every curve got the Set Missing Widths value (0.01), whatever its rig said.
 And ``apply`` copied only points and normals every frame, so widths that
 change would have kept the first frame's even with the pattern fixed. Now
 the imports read ``width pscale`` and ``apply`` copies each frame's widths
-(``animate_points.read_widths``, ``width_offsets``);
+(``animate_widths.read_widths``, ``animate_points.width_offsets``);
 ``tests/test_animate_points.py`` pins the copy on plain layers, this saves
 the real HDA with the real ROP.
 

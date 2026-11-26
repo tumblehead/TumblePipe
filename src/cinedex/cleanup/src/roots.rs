@@ -25,11 +25,16 @@ pub struct Root {
     pub path: PathBuf,
 }
 
+/// A project's roots. `roots` are the directories to walk, each once: a
+/// purpose `storage.json` puts on a path another one already has (say
+/// `export` on the project folder itself) is walked as that one. `purposes`
+/// has every purpose, so [`ProjectRoots::get`] finds each.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectRoots {
     pub project_path: PathBuf,
     pub config_path: PathBuf,
     pub roots: Vec<Root>,
+    pub purposes: Vec<Root>,
 }
 
 impl ProjectRoots {
@@ -45,31 +50,32 @@ impl ProjectRoots {
             Root { purpose: "project".into(), path: project_path.clone() },
             Root { purpose: "config".into(), path: config_path.clone() },
         ];
-        let mut seen = vec![project_path.clone(), config_path.clone()];
+        let mut purposes = roots.clone();
         for purpose in WALKED_PURPOSES {
             let path = storage.resolve(&Uri::new(purpose, std::iter::empty::<&str>())).map_err(|e| e.to_string())?;
-            let path = resolve(&path);
-            if seen.iter().any(|s| same_path(s, &path)) {
-                continue;
+            let root = Root { purpose: purpose.into(), path: resolve(&path) };
+            if !roots.iter().any(|r| same_path(&r.path, &root.path)) {
+                roots.push(root.clone());
             }
-            seen.push(path.clone());
-            roots.push(Root { purpose: purpose.into(), path });
+            purposes.push(root);
         }
-        Ok(ProjectRoots { project_path, config_path, roots })
+        Ok(ProjectRoots { project_path, config_path, roots, purposes })
     }
 
-    pub fn get(&self, purpose: &str) -> Option<&Root> {
-        self.roots.iter().find(|r| r.purpose == purpose)
+    /// The root of `purpose`: `project`, `config` or one of
+    /// [`WALKED_PURPOSES`]. Panics for any other, a caller's mistake
+    /// (Python's `ProjectRoots.get` raises KeyError).
+    pub fn get(&self, purpose: &str) -> &Root {
+        self.purposes.iter().find(|r| r.purpose == purpose).unwrap_or_else(|| panic!("no storage purpose {purpose:?}"))
     }
 
-    /// The folder of `purpose`, if the project has that root.
-    pub fn path(&self, purpose: &str) -> Option<&Path> {
-        self.get(purpose).map(|r| r.path.as_path())
+    /// The folder of `purpose` ([`ProjectRoots::get`]).
+    pub fn path(&self, purpose: &str) -> &Path {
+        &self.get(purpose).path
     }
 
-    /// The export root, or `<project>/export` without one
-    /// (`cleanup.core.export_path`).
+    /// The export root (`cleanup.core.export_path`).
     pub fn export_path(&self) -> PathBuf {
-        self.path("export").map(Path::to_path_buf).unwrap_or_else(|| self.project_path.join("export"))
+        self.path("export").to_path_buf()
     }
 }

@@ -121,7 +121,7 @@ fn report() -> String {
             .and_then(|r| r.value32().map(|v| v.collect()))
             .unwrap_or_default()
     };
-    let ours = raise::x11::windows_of(&conn, root, std::process::id()).unwrap_or_default();
+    let ours = th_window::x11::windows_of(&conn, root, std::process::id()).unwrap_or_default();
     let stacking = values(root, "_NET_CLIENT_LIST_STACKING", AtomEnum::WINDOW);
     let active = values(root, "_NET_ACTIVE_WINDOW", AtomEnum::WINDOW);
     let (hidden, above) = (atom("_NET_WM_STATE_HIDDEN"), atom("_NET_WM_STATE_ABOVE"));

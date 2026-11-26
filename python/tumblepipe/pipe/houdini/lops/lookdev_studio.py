@@ -1,4 +1,3 @@
-from tempfile import TemporaryDirectory
 from pathlib import Path
 
 import hou
@@ -6,16 +5,16 @@ import hou
 from tumblepipe.api import (
     path_str,
     get_user_name,
-    api
+    project_temp_dir,
 )
 from tumblepipe.util.io import store_json
-from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini.farm_node import FarmNode
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
 from tumblepipe.pipe.paths import Context
+from tumblepipe.pipe.houdini.nodes import button
 
 class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
 
@@ -75,10 +74,7 @@ class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
         aov_names = self.get_aov_names()
 
         # Open temporary directory
-        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-        root_temp_path.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-            temp_path = Path(temp_dir)
+        with project_temp_dir() as temp_path:
 
             # Save the workfile and bundle it with its context.json, as a
             # publish does: on the worker the scene's th:: nodes left on
@@ -187,6 +183,7 @@ def _scene_viewer():
     return hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
 
 
+@button('Lookdev Studio')
 def submit_to_farm(kwargs):
     """Submit the turntable with the batch-render switch on for the submit."""
     from tumblepipe.pipe.houdini.ui import farm_submit
@@ -203,12 +200,14 @@ def submit_to_farm(kwargs):
     farm_submit.submit('the turntable', 'Submit Turntable', _submit)
 
 
+@button('Lookdev Studio')
 def set_view_transform(kwargs):
     scene_viewer = _scene_viewer()
     scene_viewer.setUsingOCIO(True)
     scene_viewer.setOCIODisplayView(display="sRGB - Display", view="ACES 1.0 - SDR Video")
 
 
+@button('Lookdev Studio')
 def dive_to_node(kwargs, node_path):
     """Open a floating network editor on the parent of ``node_path``."""
     node = kwargs['node'].node(node_path)
@@ -223,6 +222,7 @@ def dive_to_node(kwargs, node_path):
     tab.setShowNetworkControls(False)
 
 
+@button('Lookdev Studio')
 def toggle_render_view(kwargs):
     # render names: 'Houdini VK', 'Karma CPU', 'Karma XPU', 'Storm'
     scene_viewer = _scene_viewer()
@@ -239,16 +239,19 @@ def _turntable_range(raw_node):
     )
 
 
+@button('Lookdev Studio')
 def set_timeline_to_loop(kwargs):
     first, last = _turntable_range(kwargs['node'])
     hou.playbar.setFrameRange(first, last)
     hou.playbar.setPlaybackRange(first, last)
 
 
+@button('Lookdev Studio')
 def set_view_camera(kwargs):
     _scene_viewer().viewports()[-1].setCamera(TURNTABLE_CAMERA)
 
 
+@button('Lookdev Studio')
 def playblast(kwargs):
     """Flipbook the turntable through the turntable camera into MPlay."""
     raw_node = kwargs['node']
@@ -271,6 +274,7 @@ def playblast(kwargs):
     scene_viewer.flipbook(viewport, flipbook_options)
 
 
+@button('Lookdev Studio')
 def apply_slapcomp(kwargs):
     viewport = _scene_viewer().curViewport()
     viewport.setSlapcomp(kwargs['node'].path())
@@ -291,6 +295,7 @@ _TRANSFORM_PARMS = (
 )
 
 
+@button('Lookdev Studio')
 def reset_transforms(kwargs):
     raw_node = kwargs['node']
     for parm_name in _TRANSFORM_PARMS:

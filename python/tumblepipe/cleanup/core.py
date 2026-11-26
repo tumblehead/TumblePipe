@@ -19,6 +19,7 @@ from typing import Callable
 
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import ProjectRoots
+from tumblepipe.util.text import human_bytes
 
 LOGS_DIR = ('other', 'logs')
 
@@ -146,22 +147,12 @@ def categories() -> list[Category]:
 CATEGORY_KEYS = ('exports', 'renders', 'caches', 'backups', 'jobs', 'deleted')
 
 
-def human(count: float) -> str:
-    size = float(count)
-    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
-        if size < 1024 or unit == 'TB':
-            return f'{int(size)} B' if unit == 'B' else f'{size:.1f} {unit}'
-        size /= 1024
-    return f'{count} B'
-
-
 def age_days(stamp: float, now: float) -> float:
     return (now - stamp) / 86400
 
 
 def export_path(roots: ProjectRoots) -> Path:
-    root = roots.get('export')
-    return root.path if root is not None else roots.project_path / 'export'
+    return roots.get('export').path
 
 
 def log_path_for(roots: ProjectRoots) -> Path:
@@ -293,14 +284,14 @@ def summary(plan: Plan, *, detail: int = 40) -> list[str]:
         prunable = category.prunable
         lines.append(
             f'{category.title}: {len(category.entries)} {category.noun}(s), '
-            f'{len(prunable)} to delete ({human(category.prunable_size)})'
+            f'{len(prunable)} to delete ({human_bytes(category.prunable_size)})'
         )
         by_reason: dict[tuple[bool, str], list[Entry]] = defaultdict(list)
         for entry in category.entries:
             by_reason[(entry.prune, entry.reason)].append(entry)
         for (prune, reason), group in sorted(by_reason.items(), key=lambda kv: (not kv[0][0], kv[0][1])):
             size = sum(e.size for e in group)
-            lines.append(f'  {"delete" if prune else "keep":<6}  {len(group):>6}  {human(size):>10}  {reason}')
+            lines.append(f'  {"delete" if prune else "keep":<6}  {len(group):>6}  {human_bytes(size):>10}  {reason}')
         lines.extend(f'  {note}' for note in category.notes)
         per_group: dict[str, list[Entry]] = defaultdict(list)
         for entry in prunable:
@@ -309,13 +300,13 @@ def summary(plan: Plan, *, detail: int = 40) -> list[str]:
         if ordered:
             lines.append('  To delete, biggest first:')
             for group, entries in ordered[:detail]:
-                lines.append(f'    {human(sum(e.size for e in entries)):>10}  {len(entries):>5}  {group}')
+                lines.append(f'    {human_bytes(sum(e.size for e in entries)):>10}  {len(entries):>5}  {group}')
             if len(ordered) > detail:
                 rest = ordered[detail:]
-                lines.append(f'    {human(sum(e.size for g in rest for e in g[1])):>10}  '
+                lines.append(f'    {human_bytes(sum(e.size for g in rest for e in g[1])):>10}  '
                              f'{sum(len(g[1]) for g in rest):>5}  ({len(rest)} more)')
         for error in category.errors[:20]:
             lines.append(f'  ! {error}')
         lines.append('')
-    lines.append(f'In all: {len(plan.prunable)} to delete, {human(plan.prunable_size)}.')
+    lines.append(f'In all: {len(plan.prunable)} to delete, {human_bytes(plan.prunable_size)}.')
     return lines

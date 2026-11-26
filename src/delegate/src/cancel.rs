@@ -2,13 +2,13 @@
 //! frame whenever the camera or the scene changes, and the one it was
 //! drawing is no longer wanted.
 //!
-//! [`crate::ffi::th_render_ids`] takes a flag the caller sets to give up. It
+//! [`crate::ffi::th_render_scene`] takes a flag the caller sets to give up. It
 //! is handed down as the calling thread's [`Token`] rather than through
 //! [`crate::raster::Frame`], so every render entry point and test keeps its
 //! signature; the rasteriser captures the token on the calling thread and
 //! checks it between batches and bands (also on the pool's threads), the
 //! post pass before its ambient occlusion. A cancelled frame's pixels are
-//! undefined; `th_render_ids` reports it and copies nothing out.
+//! undefined; `th_render_scene` reports it and copies nothing out.
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -37,7 +37,7 @@ impl Token {
     /// Whether the caller has asked to give the frame up.
     pub fn is_set(&self) -> bool {
         // SAFETY: non-null only between a Scope's creation and drop, during
-        // which the caller keeps the flag alive (th_render_ids's contract).
+        // which the caller keeps the flag alive (th_render_scene's contract).
         !self.0.is_null() && unsafe { &*self.0 }.load(Ordering::Relaxed) != 0
     }
 }

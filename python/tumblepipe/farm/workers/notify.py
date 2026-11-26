@@ -2,20 +2,17 @@
 render's preview frames (first/middle/last, or the Preview Frames List, up
 to ``MAX_PANORAMA_FRAMES``) as one panorama, or a review mp4."""
 
-from tempfile import TemporaryDirectory
 from io import BytesIO, TextIOWrapper
 from dataclasses import dataclass
 from pathlib import Path
 import datetime as dt
 import discord
 import sys
-import os
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
-from tumblepipe.util.uri import Uri
 from tumblepipe.apps import mp4, houdini, exr
 from tumblepipe.config.discord import (
     is_configured as is_discord_configured,
@@ -260,10 +257,7 @@ def _post_mp4(
         return error(f'MP4 not found: {path_str(mp4_path)}')
     
     # Fix the size if the mp4 is too large
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Resolve the mp4 size
         notify_mp4_path, notify_message = _fix_size(
@@ -352,17 +346,10 @@ def _create_panorama_exr(
 def _exr_to_jpeg_bytes(path: Path) -> bytes:
     """Convert EXR to JPEG bytes (exr.to_display_args), preserving color profiles."""
     
-    # Check that OCIO has been set
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
     
     # Create temporary JPEG file
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
         temp_jpeg_path = temp_path / 'temp.jpg'
 
         # The same conversion as exr.to_jpeg (hoiiotool: no licence)
@@ -386,10 +373,7 @@ def _post_panorama(
     ) -> int:
 
     # Create temporary directory for panorama EXR
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
         panorama_exr_path = temp_path / 'panorama.exr'
 
         # Create panorama EXR using oiiotool

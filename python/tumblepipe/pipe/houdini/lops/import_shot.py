@@ -1,7 +1,6 @@
 import logging
+from dataclasses import dataclass
 
-
-from tumblepipe.api import api
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_frame_range, get_fps
@@ -21,7 +20,8 @@ from tumblepipe.pipe.houdini.lops import shot_sublayers
 from tumblepipe.pipe.houdini.ui import layer_stack
 from tumblepipe.pipe.paths import (
     SHARED_CHANNEL,
-    current_staged_file_path,
+    get_latest_staged_file_path,
+    get_staged_base_path,
     get_staged_file_path,
     list_version_paths,
 )
@@ -31,6 +31,7 @@ from tumblepipe.pipe.usd.sublayer_refs import (
     nested_asset_department_refs,
 )
 from tumblepipe import resolver
+from tumblepipe.pipe.houdini.nodes import button
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,75 @@ def select_import_assets(scene_assets, context_assets):
             if ctx_asset.get('asset') not in scene_asset_uris
         ),
     ]
+
+
+@dataclass(frozen=True)
+class LayerToLoad:
+    """One layer the node's Sublayer LOP loads: ``ref`` is what it loads,
+    ``row`` the Layer Stack row (the parsed sublayer, a department layer
+    tagged ``downstream``), ``pin_stripped`` whether ``ref`` dropped the
+    staged build's version pin."""
+    row: dict
+    ref: str
+    pin_stripped: bool
+
+
+def plan_layers(
+    sublayers, excluded_departments, excluded_asset_uris, downstream,
+    single_channel: bool, latest: bool,
+    ) -> list[LayerToLoad]:
+    """The layers an import loads, strongest first (the staged build lists
+    them weakest first, the Sublayer LOP takes them strongest first).
+
+    Left out: a department layer whose department is excluded, an asset
+    layer whose asset an excluded department introduced
+    (``excluded_asset_uris``), and a ``_shared`` channel layer of a shot
+    with a single channel. A department layer shown though downstream of
+    the node's is tagged for the Layer Stack: its opinions beat this
+    department's in the final shot. In ``latest`` mode a layer's version
+    pin is dropped, so the resolver picks the actual latest.
+    """
+    planned = []
+    for info in reversed(sublayers):
+        if info[CHANNEL_KEY] == SHARED_CHANNEL and single_channel:
+            continue
+        row = dict(info)
+        if row['type'] == 'shot_department':
+            if row['department'] in excluded_departments:
+                continue
+            row['downstream'] = row['department'] in downstream
+        elif row['type'] == 'asset':
+            if str(shot_sublayers.asset_uri_of(row['path'])) in excluded_asset_uris:
+                continue
+        # Every staged sublayer is an entity URI
+        uri = Uri.parse(row['path'])
+        pin_stripped = latest and 'version' in uri.query
+        if pin_stripped:
+            uri = Uri(uri.purpose, uri.segments, {
+                key: value for key, value in uri.query.items() if key != 'version'
+            })
+        planned.append(LayerToLoad(row, str(uri), pin_stripped))
+    return planned
+
+
+def import_comment(resolved_version, context_data, muted_departments, mute_count) -> str:
+    """The node comment after an import: the build it loaded, who made it
+    and when (from its context.json), and what the asset-department mute
+    did (a name matching no layer otherwise looks applied)."""
+    comment = f"Imported: {resolved_version}"
+    if context_data is not None:
+        outputs = context_data.get('outputs', [])
+        if outputs:
+            timestamp = outputs[0].get('timestamp', '')
+            user = outputs[0].get('user', '')
+            if timestamp and user:
+                comment += f"\n{timestamp}\nby {user}"
+    if muted_departments:
+        comment += (
+            f"\nMuted asset {', '.join(muted_departments)}: "
+            f"{mute_count} layer{'' if mute_count == 1 else 's'}"
+        )
+    return comment
 
 
 def _indent(lines):
@@ -174,9 +244,7 @@ class ImportShot(TimeOffsetNode, EntityNode):
 
         channel_name = self.get_channel_name()
 
-        # Get staged directory for this channel
-        staged_uri = Uri.parse('export:/') / shot_uri.segments / '_staged' / channel_name
-        staged_path = api.storage.resolve(staged_uri)
+        staged_path = get_staged_base_path(shot_uri, channel_name)
 
         # Get versioned directories (v0001, v0002, etc.)
         version_paths = list_version_paths(staged_path)
@@ -307,7 +375,7 @@ class ImportShot(TimeOffsetNode, EntityNode):
                 # Both 'latest' and 'current' use highest versioned staged file
                 # ('latest' strips versions for dynamic resolution at import time)
                 channel_name = self.get_channel_name()
-                actual_file_path = current_staged_file_path(shot_uri, channel_name)
+                actual_file_path = get_latest_staged_file_path(shot_uri, channel_name)
                 if actual_file_path is not None:
                     resolved_version = actual_file_path.parent.name
                     self.parm('version_label').set(resolved_version)
@@ -349,11 +417,11 @@ class ImportShot(TimeOffsetNode, EntityNode):
             # Enable resolver latest mode for full cascade semantics
             # All nested entity:/ URIs will resolve to their latest versions
             resolver.set_latest_mode(True)
-            staged_file_path = current_staged_file_path(shot_uri, channel_name)
+            staged_file_path = get_latest_staged_file_path(shot_uri, channel_name)
         elif version_name == 'current':
             # Disable latest mode - use frozen versions from build
             resolver.set_latest_mode(False)
-            staged_file_path = current_staged_file_path(shot_uri, channel_name)
+            staged_file_path = get_latest_staged_file_path(shot_uri, channel_name)
         else:
             # Disable latest mode - use specific version
             resolver.set_latest_mode(False)
@@ -411,60 +479,30 @@ class ImportShot(TimeOffsetNode, EntityNode):
             assets, departments_to_exclude, self.list_shot_department_names()
         )
 
-        # Filter out excluded layers - both department layers AND assets from excluded departments
-        def should_include_layer(info):
-            # Skip _shared channel layers for single-channel entities
-            if info[CHANNEL_KEY] == SHARED_CHANNEL:
-                if len(list_channels(shot_uri)) <= 1:
-                    return False
+        layers = plan_layers(
+            sublayers, departments_to_exclude, excluded_asset_uris,
+            downstream_departments,
+            single_channel=len(list_channels(shot_uri)) <= 1,
+            latest=version_name == 'latest',
+        )
 
-            if info['type'] == 'shot_department':
-                return info['department'] not in departments_to_exclude
-            elif info['type'] == 'asset':
-                asset_uri = shot_sublayers.asset_uri_of(info['path'])
-                return str(asset_uri) not in excluded_asset_uris
-            # The root layer
-            return True
-
-        layers_to_load = list(reversed([
-            info for info in sublayers
-            if should_include_layer(info)
-        ]))
-        for info in layers_to_load:
-            if info['type'] == 'shot_department':
-                info['downstream'] = info['department'] in downstream_departments
-
-        # Configure Sublayer LOP with filtered layers. On a Multi's shared
+        # Configure Sublayer LOP with the planned layers. On a Multi's shared
         # timeline every layer moves to where the shot sits there.
-        import_node.parm('num_files').set(len(layers_to_load))
+        import_node.parm('num_files').set(len(layers))
         time_offset = self.get_time_offset()
-
-        loaded_refs = []
-        for i, info in enumerate(layers_to_load):
-            # Every staged sublayer is an entity URI
-            uri = Uri.parse(info['path'])
-            pin_stripped = False
-            # Strip version when in 'latest' mode so resolver picks actual latest
-            if version_name == 'latest' and 'version' in uri.query:
-                stripped = dict(uri.query)
-                del stripped['version']
-                uri = Uri(uri.purpose, uri.segments, stripped)
-                pin_stripped = True
-            layer_path = str(uri)
-            import_node.parm(f'filepath{i+1}').set(layer_path)
-            import_node.parm(f'timeoffset{i+1}').set(time_offset)
-            loaded_refs.append(layer_path)
-
+        for index, layer in enumerate(layers, 1):
+            import_node.parm(f'filepath{index}').set(layer.ref)
+            import_node.parm(f'timeoffset{index}').set(time_offset)
             # Stamp what the resolver actually lands on, so the Layer Stack
-            # reports the loaded version rather than the pin we just stripped.
-            # Only when a pin was stripped: otherwise the ref carries its own
-            # version and the recorded pin is already the truth — no reason to
-            # pay a resolve per layer for a value we have.
-            if pin_stripped:
-                info['effective_version'] = shot_sublayers.effective_layer_version(layer_path)
+            # reports the loaded version rather than the pin just stripped.
+            # Only then: otherwise the ref carries its own version and the
+            # recorded pin is already the truth, no resolve per layer needed.
+            if layer.pin_stripped:
+                layer.row['effective_version'] = shot_sublayers.effective_layer_version(layer.ref)
+        loaded_refs = [layer.ref for layer in layers]
 
         # Update layer stack UI with checkboxes and link to sublayer enables
-        layer_stack.update_layer_stack(context, layers_to_load)
+        layer_stack.update_layer_stack(context, [layer.row for layer in layers])
 
         # Excluded asset departments are muted, not filtered: the layers sit
         # several sublayers below anything this node loads (scene assets go
@@ -511,26 +549,10 @@ class ImportShot(TimeOffsetNode, EntityNode):
         # Handle asset duplication for assets with instances > 1
         self._setup_asset_duplication(context, assets, mute_refs)
 
-        # Set success comment with import metadata
-        resolved_version = staged_file_path.parent.name
-        comment = f"Imported: {resolved_version}"
-        # Try to get timestamp and user from context.json
-        if context_data is not None:
-            outputs = context_data.get('outputs', [])
-            if outputs:
-                output = outputs[0]
-                timestamp = output.get('timestamp', '')
-                user = output.get('user', '')
-                if timestamp and user:
-                    comment += f"\n{timestamp}\nby {user}"
-        if excluded_asset_departments:
-            # Say what the exclusion did: a name matching no layer (no asset
-            # in the shot exported it) otherwise looks applied.
-            comment += (
-                f"\nMuted asset {', '.join(excluded_asset_departments)}: "
-                f"{len(mute_refs)} layer{'' if len(mute_refs) == 1 else 's'}"
-            )
-        ns.set_node_comment(context, comment)
+        ns.set_node_comment(context, import_comment(
+            staged_file_path.parent.name, context_data,
+            excluded_asset_departments, len(mute_refs),
+        ))
 
     def _setup_asset_duplication(self, context, assets, mute_refs=()):
         """Configure duplication for assets with instance count > 1.
@@ -653,6 +675,7 @@ def on_created(raw_node):
     node._initialize()
 
 
+@button('Import Shot')
 def execute(kwargs):
     """The Import button's and the Channel/Version menus' callback.
 
@@ -687,11 +710,13 @@ def execute(kwargs):
     hdefereval.executeDeferred(_import)
 
 
+@button('Import Shot')
 def select(kwargs):
     """Entity button."""
     ImportShot(kwargs['node']).pick_entity('Select Shot')
 
 
+@button('Import Shot')
 def inspect_asset_layer(kwargs, index: int):
     """A Layer Stack row's '...' button."""
     native = kwargs['node']
@@ -699,6 +724,8 @@ def inspect_asset_layer(kwargs, index: int):
         native, index, pinned=ImportShot(native).get_version_name() != 'latest'
     )
 
+
+@button('Import Shot')
 def reveal_layer(kwargs, index: int):
     """A Layer Stack row's Inspect button."""
     native = kwargs['node']

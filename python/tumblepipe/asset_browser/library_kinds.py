@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from tumbletrove.asset_browser.api.errors import CatalogError
+
+from .uris import MalformedCardId
 from tumbletrove.asset_browser.api.types import (
     Asset, AssetAction, AssetDetail, CreationField,
 )
@@ -146,16 +148,15 @@ class LibraryKinds:
         return frozenset(k.kind for k in self._kinds)
 
     def for_id(self, asset_id: str) -> Optional[LibraryKind]:
-        """The kind that owns *asset_id*, or None for any other id."""
-        if not asset_id:
-            return None
+        """The kind whose id prefix *asset_id* has, or None for an id of no
+        library kind. Raises :class:`~.uris.MalformedCardId` when the
+        prefix's kind does not own it (a mangled id)."""
         for kind in self._kinds:
-            if asset_id.startswith(kind.id_prefix) and kind.owns(asset_id):
+            if asset_id.startswith(kind.id_prefix):
+                if not kind.owns(asset_id):
+                    raise MalformedCardId(f"{asset_id!r} is not a {kind.kind} id")
                 return kind
         return None
-
-    def owns(self, asset_id: str) -> bool:
-        return self.for_id(asset_id) is not None
 
     def warm_up(self) -> None:
         for kind in self._kinds:

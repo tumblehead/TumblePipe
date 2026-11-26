@@ -37,13 +37,16 @@ catalog turns it into the button's hover and menu.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
 from tumblepipe.farm.local import queue
-from tumblepipe.farm.manager import activity, rows
+from tumblepipe.farm.manager import activity, rows, sources
+
+log = logging.getLogger(__name__)
 
 #: At most this many ended batches are kept in view (the button's menu).
 MAX_ROWS = 10
@@ -475,16 +478,11 @@ def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
         tasks: list[rows.TaskRow] = []
         errors: list[tuple[str, str]] = []
         try:
-            if job.source == rows.LOCAL:
-                from pathlib import Path
-                tasks = rows.local_task_rows(Path(job.folder), job.job_index)
-            else:
-                from tumblepipe.farm.manager import deadline_jobs
-                tasks = deadline_jobs.fetch_tasks(job.id)
-                if not any(t.error for t in tasks):
-                    errors = deadline_jobs.job_errors(job.id, limit=10)
+            tasks = sources.tasks_of(job)
+            if not any(t.error for t in tasks):
+                errors = sources.errors_of(job, limit=10)
         except Exception:
-            pass
+            log.debug('Finished batch: the tasks of %s could not be read', job.id, exc_info=True)
         written = written_frames(tasks) if job.kind in FRAME_KINDS else 0
         folder = ''
         if written:
@@ -492,6 +490,7 @@ def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
                 target = frames_preview.job_target(job)
                 folder = str(target.folder) if target.ready else ''
             except Exception:
+                log.debug('Finished batch: no preview frames for %s', job.id, exc_info=True)
                 folder = ''
         line = failure_line(job.kind, tasks, errors, rows.frame_count(job.frames))
         return Detail(line=line, written=written, preview_folder=folder,
@@ -500,12 +499,14 @@ def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
         target = frames_preview.best_target([r for r in batch if r.kind in frames_preview.FRAME_KINDS])
         folder = str(target.folder) if target.ready else ''
     except Exception:
+        log.debug('Finished batch: no preview frames', exc_info=True)
         folder = ''
     movie = ''
     if not folder:
         try:
             movie = movie_folder(batch)
         except Exception:
+            log.debug('Finished batch: no movie folder', exc_info=True)
             movie = ''
     return Detail(preview_folder=folder, folder=notify_folder(state, folder, movie))
 

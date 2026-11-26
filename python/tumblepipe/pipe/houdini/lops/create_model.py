@@ -3,6 +3,7 @@ import hou
 from tumblepipe.pipe.houdini import import_metadata
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.nodes import button
 
 class CreateModel(EntityNode):
 
@@ -42,6 +43,7 @@ def on_created(raw_node):
     CreateModel(raw_node)._initialize()
     fill_materials(raw_node)
 
+@button('Create Model')
 def execute(kwargs):
     """Execute node from HDA callback."""
     raw_node = kwargs['node']
@@ -59,6 +61,7 @@ def _get_materials(geo, outputnode):
         return [geo.stringAttribValue("shop_materialpath")]
     return []
 
+@button('Create Model')
 def fill_materials(node):
     sopnet = node.node("sopnet")
     outputnode = sopnet.node("create").displayNode()

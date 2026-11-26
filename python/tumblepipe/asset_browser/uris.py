@@ -18,6 +18,13 @@ from tumblepipe.util.uri import Uri
 ENTITY_KINDS = ("assets", "shots")
 
 
+class MalformedCardId(ValueError):
+    """A card id with a known kind's prefix (``group:``, ``scene:``,
+    ``recipe:``, ``texture:``, ``edit:``) that does not parse as that kind.
+    The catalog mints every card id, so one is a bug: every parser raises
+    this rather than letting the id fall through to the entity resolvers."""
+
+
 # ── Browser ids ──────────────────────────────────────────────
 
 

@@ -15,6 +15,7 @@ from tumblepipe.pipe.paths import (
     get_next_version_path,
     get_rig_export_path,
 )
+from tumblepipe.pipe.houdini.nodes import button
 
 class ExportRig(EntityNode):
 
@@ -115,6 +116,7 @@ class ExportRig(EntityNode):
 def create(scene, name):
     return ns.create_node(scene, name, ExportRig, 'export_rig', 'Sop')
 
+@button('Export Rig')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ExportRig(raw_node)

@@ -41,7 +41,7 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 if TYPE_CHECKING:
-    from .entity_editor import _MultiPane
+    from .entity_editor_multis import MultiPane
 
 MIME = 'application/x-tumblepipe-multi-cards'
 
@@ -451,7 +451,7 @@ class _NewColumn(QFrame):
 class MultiBoard(QWidget):
     """The Multis tab's Board view; see the module docstring."""
 
-    def __init__(self, pane: '_MultiPane') -> None:
+    def __init__(self, pane: 'MultiPane') -> None:
         super().__init__(pane)
         self.pane = pane
         self.department: str | None = None

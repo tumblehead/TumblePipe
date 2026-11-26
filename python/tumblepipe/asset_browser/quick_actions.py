@@ -408,12 +408,11 @@ def last_published_html(entity_uri, published_at, format_age_html) -> str:
     said "never" after every publish. A Multi's time is its newest member's,
     with the members never published named after it.
     """
-    from tumblepipe.config.groups import get_group, is_group_uri
+    from tumblepipe.config.groups import is_group_uri, members as group_members
 
     if not is_group_uri(entity_uri):
         return format_age_html("Last published", published_at(entity_uri))
-    group = get_group(entity_uri)
-    members = list(group.members) if group is not None else []
+    members = group_members(entity_uri)
     times = {str(member): published_at(member) for member in members}
     known = [t for t in times.values() if t is not None]
     text = format_age_html("Last published", max(known) if known else None)

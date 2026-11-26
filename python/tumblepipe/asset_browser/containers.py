@@ -39,12 +39,14 @@ from tumbletrove.asset_browser.api.types import (
 
 from . import uris as uris
 from tumblepipe.naming import get_version_code
+from tumblepipe.pipe.context import read_version_entry
+from tumblepipe.pipe.paths.naming import version_of
+from tumblepipe.util.uri import Uri
 
 from .types import latest_by_dept, workfile_versions
 
 if TYPE_CHECKING:
     from .projects import PipelineProjectRegistry
-    from tumblepipe.util.uri import Uri
     from .clients import ClientPool
     from .houdini import ProjectActivator
     from .refresh import BrowserRefresh
@@ -54,25 +56,6 @@ log = logging.getLogger(__name__)
 
 #: The ``type:`` tag value of the cards a Multi of each context takes.
 _CONTEXT_TYPE = {"assets": "asset", "shots": "shot"}
-
-def _hip_context_user_note(hip_path) -> tuple[str, str]:
-    """``(user, note)`` for a workfile, from the ``_context/{version}.json``
-    sidecar next to it (the same file the entity save flow writes and
-    ``WorkfileHelper.get_dept_row_meta`` reads for assets/shots — here the
-    dept dir comes straight from the hip path, so it also works for group
-    workfiles the entity resolver can't split). Both come out of one read
-    because they live in one file. ``("", "")`` for a version saved before
-    sidecars existed; the note is also blank for versions saved before
-    notes existed. A sidecar that will not parse raises, as does a hip
-    whose name is not a version (the workfile lookups only return those)."""
-    from tumblepipe.pipe.paths.naming import version_of
-    ctx_file = hip_path.parent / "_context" / f"{version_of(hip_path)}.json"
-    if not ctx_file.exists():
-        return "", ""
-    import json
-    data = json.loads(ctx_file.read_text(encoding="utf-8"))
-    return str(data.get("user") or ""), str(data.get("note") or "")
-
 
 @dataclass(frozen=True)
 class GroupContainer:
@@ -123,29 +106,49 @@ class SceneContainer:
 ContainerRef = GroupContainer | SceneContainer
 
 
-def parse(collection_id: str) -> ContainerRef | None:
-    """Parse ``"<kind>:<project>:<path>"`` into the typed container.
+_CONTAINERS = {"group:": GroupContainer, "scene:": SceneContainer}
 
-    Returns ``None`` for empty input, missing prefix, or missing
-    ``project:path`` split. Unknown kinds also return ``None`` —
-    callers can use this as a single test for "is this a recognised
-    container id at all".
-    """
-    if not collection_id:
-        return None
-    if collection_id.startswith("group:"):
-        rest = collection_id[len("group:"):]
-        if ":" not in rest:
-            return None
-        proj_name, path = rest.split(":", 1)
-        return GroupContainer(proj_name, path)
-    if collection_id.startswith("scene:"):
-        rest = collection_id[len("scene:"):]
-        if ":" not in rest:
-            return None
-        proj_name, path = rest.split(":", 1)
-        return SceneContainer(proj_name, path)
+
+def parse(collection_id: str) -> ContainerRef | None:
+    """Parse ``"<kind>:<project>:<path>"`` into the typed container, the
+    inverse of ``collection_id``; ``None`` for an id of any other kind (an
+    entity, a library card, a sidebar row). Raises
+    :class:`~.uris.MalformedCardId` for a ``group:`` or ``scene:`` id with
+    no ``project:path`` split."""
+    for prefix, container in _CONTAINERS.items():
+        if collection_id.startswith(prefix):
+            proj_name, sep, path = collection_id[len(prefix):].partition(":")
+            if not sep:
+                raise uris.MalformedCardId(
+                    f"{collection_id!r} is not a {container.kind} id "
+                    f"({prefix}<project>:<path>)")
+            return container(proj_name, path)
     return None
+
+
+def group_of(card_id: str) -> GroupContainer | None:
+    """The Multi *card_id* names; None for a card of any other kind."""
+    ref = parse(card_id)
+    return ref if isinstance(ref, GroupContainer) else None
+
+
+def group_ref(group_id: str) -> GroupContainer:
+    """The Multi of *group_id*, an id the catalog minted as one (a Multi's
+    card or its ``group:`` tag); raises :class:`~.uris.MalformedCardId`
+    for any other id."""
+    group = group_of(group_id)
+    if group is None:
+        raise uris.MalformedCardId(f"{group_id!r} is not a Multi id")
+    return group
+
+
+def container_ref(container_id: str) -> ContainerRef:
+    """The Multi or Root of *container_id*, an id the catalog minted as
+    one; raises :class:`~.uris.MalformedCardId` for any other id."""
+    ref = parse(container_id)
+    if ref is None:
+        raise uris.MalformedCardId(f"{container_id!r} is not a Multi or Root id")
+    return ref
 
 
 def refusal(ref: ContainerRef, uri) -> str | None:
@@ -498,13 +501,12 @@ class ContainerManager:
             # sidebar's nested **Multis** subheader is active. The
             # context comes from the second URI segment, i.e. the
             # ``ctx`` in ``group:PROJECT:ctx/name``.
-            _, _, group_path = container_id.split(":", 2)
+            group_path = group_ref(container_id).path
             ctx = group_path.split("/", 1)[0] if "/" in group_path else ""
             covered = self._group_departments_from_tag(
                 container_id, project_name,
             )
             if covered:
-                from tumblepipe.pipe.paths.naming import version_of
                 hips = self._group_dept_latest_hips(container_id)
                 # Same shape as shot/asset metadata: {dept: latest_version
                 # or ""}. Dept-name iteration order (for deck item render)
@@ -534,7 +536,8 @@ class ContainerManager:
                 # sidecar read for that dept only.
                 if latest_hip is not None:
                     metadata["latest_update"] = latest_update
-                    user, note = _hip_context_user_note(latest_hip)
+                    user, note = read_version_entry(
+                        latest_hip.parent, version_of(latest_hip))
                     metadata["last_user"] = user
                     metadata["last_note"] = note
         return Asset(
@@ -625,7 +628,7 @@ class ContainerManager:
         ``group:PROJECT:ctx/name``. ``[]`` while the project's Client is
         not READY, or for a Multi that no longer exists.
         """
-        _, _, path = group_tag.split(":", 2)
+        path = group_ref(group_tag).path
         proj = self._registry.get(project_name)
         if proj is None or not self._clients.is_ready(project_name):
             return []
@@ -639,7 +642,8 @@ class ContainerManager:
         """``[(member_asset_id, member_name)]`` of a Multi, in its
         groups.json order; ``[]`` while the project's Client is not READY
         or for a Multi that no longer exists."""
-        _, proj_name, path = group_tag.split(":", 2)
+        group = group_ref(group_tag)
+        proj_name, path = group.project_name, group.path
         proj = self._registry.get(proj_name)
         if proj is None or not self._clients.is_ready(proj_name):
             return []
@@ -664,7 +668,8 @@ class ContainerManager:
         the project's Client is not READY, or for a Multi that no longer
         exists.
         """
-        _, proj_name, path = group_tag.split(":", 2)
+        group = group_ref(group_tag)
+        proj_name, path = group.project_name, group.path
         proj = self._registry.get(proj_name)
         if proj is None or not self._clients.is_ready(proj_name):
             return {}
@@ -693,7 +698,6 @@ class ContainerManager:
         panel's dropdown can pick an older one. The folder is the latest
         hip's parent; the latest itself is always included, since the
         context.json pointer can see a save a stale SMB listing misses."""
-        from tumblepipe.pipe.paths.naming import version_of
         result: dict[str, list[str]] = {}
         for dept_name, hip in self._group_dept_latest_hips(
                 group_tag).items():
@@ -707,7 +711,7 @@ class ContainerManager:
         workfiles.
 
         The mtime is the hip file's stat; the user and note come from the
-        ``_context`` sidecar (see :func:`_hip_context_user_note`). These
+        ``_context`` sidecar (``pipe.context.read_version_entry``). These
         feed the list view's User/Edited/Note columns for a group's deck
         rows (the entity-side equivalent is
         ``WorkfileManager.get_dept_row_meta``, which returns the same
@@ -722,7 +726,7 @@ class ContainerManager:
             except FileNotFoundError:
                 # Deleted since the lookup that found it.
                 continue
-            user, note = _hip_context_user_note(hip)
+            user, note = read_version_entry(hip.parent, version_of(hip))
             result[dept_name] = (user, mtime, note)
         return result
 
@@ -819,9 +823,8 @@ class ContainerManager:
         detail carries enough metadata for the panel to render the
         Info tab + departments toggle (groups only).
         """
-        # Container ids are minted by the catalog; one that does not
-        # split is a bug and raises.
-        kind, proj_name, path = asset_id.split(":", 2)
+        ref = container_ref(asset_id)
+        kind, proj_name, path = ref.kind, ref.project_name, ref.path
 
         proj = self._registry.get(proj_name)
         if proj is not None:
@@ -984,9 +987,10 @@ class ContainerManager:
         invalidation + card and detail-panel refresh so the user sees
         the deck and the Departments tab catch up on the next paint.
         """
-        if not group_id.startswith("group:"):
+        group = group_of(group_id)
+        if group is None:
             return
-        _, proj_name, path = group_id.split(":", 2)
+        proj_name, path = group.project_name, group.path
         proj = self._registry.get(proj_name)
         if proj is None:
             return
@@ -1067,52 +1071,23 @@ class ContainerManager:
         self, ref: SceneContainer, asset_ids: list[str],
     ) -> tuple[int, int, set[str]]:
         from tumblepipe.config import scene as scn_mod
-        store = self._store_of(ref)
-        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
-        if scene is None:
-            raise ValueError(f"Root {ref.path!r} does not exist")
-        added = 0
-        skipped = 0
-        skip_reasons: set[str] = set()
-        shot_ref_changed_uris: list = []
-        existing = list(scene.assets)
-        # ``AssetEntry.asset`` is typed as ``str`` (URI string); the
-        # tumblepipe JSON layer doesn't serialise raw ``Uri`` objects,
-        # so passing one in silently produced unreadable entries
-        # that vanished on the next ``get_scene`` (bug observed:
-        # "Root members disappear after restart"). Force ``str(uri)``
-        # for every comparison and AssetEntry write below.
-        existing_uris = {e.asset for e in existing}
-        new_entries = list(existing)
+        members, refused, reasons = [], 0, set()
         for aid in asset_ids:
             uri = self._resolver.uri_for(aid)
             reason = refusal(ref, uri)
-            if reason is not None:
-                skipped += 1
-                skip_reasons.add(reason)
-                continue
-            uri_str = str(uri)
-            # Shots dropped on a Root set the shot's scene_ref (the
-            # shot "uses" this Root as its root-layer source).
-            if uri.segments[0] == "shots":
-                scn_mod.set_scene_ref_in(store, uri, ref.uri)
-                added += 1
-                shot_ref_changed_uris.append(uri)
-                continue
-            if uri_str in existing_uris:
-                skipped += 1
-                skip_reasons.add("already in Root")
-                continue
-            existing_uris.add(uri_str)
-            new_entries.append(scn_mod.AssetEntry(asset=uri_str, instances=1))
-            added += 1
-        if shot_ref_changed_uris:
+            if reason is None:
+                members.append(uri)
+            else:
+                refused += 1
+                reasons.add(reason)
+        added, skipped, held = scn_mod.add_root_members_in(
+            self._store_of(ref), ref.uri, members,
+        )
+        if any(uri.segments[0] == "shots" for uri in members):
             # Shot detail panels show the assigned Root — refresh so the
             # user sees the change without re-selecting.
             self._refresh.detail()
-        if new_entries != list(existing):
-            scn_mod.set_scene_assets_in(store, ref.uri, new_entries)
-        return (added, skipped, skip_reasons)
+        return (added, refused + skipped, reasons | held)
 
     def _remove_assets_from_group(
         self, ref: GroupContainer, asset_ids: list[str],
@@ -1133,11 +1108,10 @@ class ContainerManager:
     # ── Root edit: the asset list ─────────────────────────
 
     @staticmethod
-    def _scene_asset_label(uri_or_str) -> str:
+    def _scene_asset_label(asset) -> str:
         """``entity:/assets/CAT/NAME`` → ``CAT/NAME``, the label the edit
         dialog shows and hands back."""
-        text = str(uri_or_str)
-        return text.replace("entity:/assets/", "", 1)
+        return "/".join(Uri.parse(str(asset)).segments[1:])
 
     def scene_edit_fields(self, ref: SceneContainer) -> list:
         """The Root's edit dialog: one multi-select of the project's
@@ -1166,79 +1140,31 @@ class ContainerManager:
         ]
 
     def edit_scene_assets(self, ref: SceneContainer, labels) -> bool:
-        """Apply the edit dialog's ticked asset labels to the Root.
-
-        Entries the Root already holds keep their instance count and
-        channel; a newly ticked asset joins with one instance on the
-        default channel; an unticked one leaves. Returns True when the
-        list changed.
-        """
+        """Apply the edit dialog's ticked asset labels to the Root
+        (``config.scene.set_root_assets_in``). True when the list changed."""
         from tumblepipe.config import scene as scn_mod
-        store = self._store_of(ref)
-        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
-        if scene is None:
-            raise ValueError(f"Root {ref.path!r} does not exist")
-        wanted = list(dict.fromkeys(str(x) for x in labels))
-        kept = [
-            e for e in scene.assets
-            if self._scene_asset_label(e.asset) in wanted
+        assets = [
+            uris.entity_asset(*str(label).split("/", 1)) for label in labels
         ]
-        held = {self._scene_asset_label(e.asset) for e in scene.assets}
-        added = [
-            scn_mod.AssetEntry(asset=f"entity:/assets/{label}", instances=1)
-            for label in wanted if label not in held
-        ]
-        new_assets = kept + added
-        if [(e.asset, e.instances, e.channel) for e in new_assets] == [
-            (e.asset, e.instances, e.channel) for e in scene.assets
-        ]:
-            return False
-        scn_mod.set_scene_assets_in(store, ref.uri, new_assets)
-        return True
+        return scn_mod.set_root_assets_in(self._store_of(ref), ref.uri, assets)
 
     def _remove_assets_from_scene(
         self, ref: SceneContainer, asset_ids: list[str],
     ) -> tuple[int, int]:
-        """``(removed, skipped)``."""
+        """``(removed, skipped)``. An id that names no entity is neither."""
         from tumblepipe.config import scene as scn_mod
-        store = self._store_of(ref)
-        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
-        if scene is None:
-            raise ValueError(f"Root {ref.path!r} does not exist")
-        removed = 0
-        skipped = 0
-        drop_set: set[str] = set()
-        shot_uris_to_clear: list = []
-        for aid in asset_ids:
-            uri = self._resolver.uri_for(aid)
-            if uri is None:
-                continue
-            # Shots: membership is via ``scene_ref`` on the shot, not
-            # via the Root's ``assets`` list. Clear the ref (if it
-            # points at this Root) to "remove" the shot.
-            if uri.segments[0] == "shots":
-                shot_uris_to_clear.append(uri)
-            else:
-                drop_set.add(str(uri))
-        for shot_uri in shot_uris_to_clear:
-            if scn_mod.get_scene_ref_in(store, shot_uri) == ref.uri:
-                scn_mod.set_scene_ref_in(store, shot_uri, None)
-                removed += 1
-            else:
-                skipped += 1
-        kept: list = []
-        for entry in scene.assets:
-            if entry.asset in drop_set:
-                removed += 1
-            else:
-                kept.append(entry)
-        if len(kept) != len(scene.assets):
-            scn_mod.set_scene_assets_in(store, ref.uri, kept)
-        if shot_uris_to_clear:
+        members = [
+            uri for uri in map(self._resolver.uri_for, asset_ids)
+            if uri is not None
+        ]
+        result = scn_mod.remove_root_members_in(
+            self._store_of(ref), ref.uri, members,
+        )
+        if any(uri.segments[0] == "shots" for uri in members):
             # Shot detail panels show the assigned Root — refresh so
             # the user sees the change without re-selecting.
             self._refresh.detail()
-        return (removed, skipped)
+        return result
 
     def open_container_location(self, collection_id: str) -> bool:
         """Open the Multi or Root's on-disk storage folder in Explorer.

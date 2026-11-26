@@ -10,6 +10,7 @@ from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.pipe.paths import (
     list_version_paths
 )
+from tumblepipe.pipe.houdini.nodes import button
 
 def _clear_children(scene_node):
     for child_node in scene_node.children():
@@ -293,6 +294,7 @@ class SopModify(FrameRangeNode, ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, SopModify, 'sop_modify')
 
+@button('Sop Modify')
 def latest(kwargs):
     raw_node = kwargs['node']
     node = SopModify(raw_node)
@@ -301,11 +303,13 @@ def latest(kwargs):
     latest_version_name = version_names[-1]
     node.set_version_name(latest_version_name)
 
+@button('Sop Modify')
 def cache(kwargs):
     raw_node = kwargs['node']
     node = SopModify(raw_node)
     node.cache()
 
+@button('Sop Modify')
 def load(kwargs):
     raw_node = kwargs['node']
     node = SopModify(raw_node)

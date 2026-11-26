@@ -18,7 +18,7 @@ def _oiiotool():
         _OIIOTOOL = houdini.OIIOTool()
     return _OIIOTOOL
 
-def _run(command, **kwargs):
+def run_oiiotool(command, **kwargs):
     # command[0] is the 'oiiotool' program name; the native wrapper supplies the
     # real hoiiotool executable, so drop it. Both helpers raise
     # app.CommandFailed when oiiotool exits non-zero.
@@ -355,7 +355,7 @@ def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
     if not needs_renaming: return temp_image_path
 
     temp_renamed_path = temp_path / f'renamed_{index_name}.exr'
-    _run([
+    run_oiiotool([
         'oiiotool',
         path_str(temp_image_path),
         '--chnames', ','.join(
@@ -388,7 +388,7 @@ def split_subimages(input_path, output_path):
         # while the file is still one multi-part image, so each split AOV
         # carries it (the conditional rename below preserves attributes).
         temp_output_path = temp_path / '%04d.exr'
-        _run([
+        run_oiiotool([
             'oiiotool',
             path_str(input_path),
             '-a', *ACESCG_ATTRIB_ARGS,
@@ -405,7 +405,7 @@ def split_subimages(input_path, output_path):
             grouped.update(crypto.part_indices)
             output_image_path = output_path / crypto.aov_name / input_path.name
             output_image_path.parent.mkdir(parents=True, exist_ok=True)
-            _run(cryptomatte_command(
+            run_oiiotool(cryptomatte_command(
                 input_path, crypto, image_infos, output_image_path
             ))
             output_image_paths[crypto.aov_name] = output_image_path
@@ -636,7 +636,7 @@ def combine_aovs(
 
     if len(included) == 0: return None
     command += ['-o', path_str(output_path)]
-    _run(command)
+    run_oiiotool(command)
     if not output_path.exists():
         raise RuntimeError(f'oiiotool exited 0 but wrote no {output_path}')
     return included
@@ -705,7 +705,7 @@ def extract_aov(
             '--chappend',
         ]
     command += ['-o', path_str(output_path)]
-    _run(command)
+    run_oiiotool(command)
 
 def encode(input_path, output_path, compression: str):
     """Re-encode an EXR with ``compression`` (an oiiotool spelling, e.g.
@@ -715,7 +715,7 @@ def encode(input_path, output_path, compression: str):
     dropped the colorspace metadata -- re-stamp it here.
     """
     _require_suffix(input_path, '.exr')
-    _run([
+    run_oiiotool([
         'oiiotool', path_str(input_path),
         *ACESCG_ATTRIB_ARGS,
         '--compression', compression,
@@ -730,7 +730,7 @@ def stamp_acescg(input_path, output_path):
     to the network.
     """
     _require_suffix(input_path, '.exr')
-    _run([
+    run_oiiotool([
         'oiiotool', path_str(input_path),
         *ACESCG_ATTRIB_ARGS,
         '-o', path_str(output_path)

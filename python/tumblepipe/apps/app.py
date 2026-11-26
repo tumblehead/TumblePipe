@@ -80,3 +80,19 @@ def run(
     if returncode != 0:
         raise CommandFailed(command, returncode, output)
     return output
+
+
+def log_progress(iterable):
+    """Yield ``iterable``'s items, printing Deadline's ``Progress: N`` lines."""
+    items = list(iterable)
+    total = len(items)
+    if total == 0:
+        return
+
+    prev_progress = 0
+    for index, item in enumerate(items):
+        yield item
+        progress = int((index + 1) / total * 100)
+        if progress != prev_progress:
+            print(f'Progress: {progress}')
+            prev_progress = progress

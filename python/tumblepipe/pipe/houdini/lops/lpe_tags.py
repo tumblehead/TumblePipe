@@ -1,3 +1,4 @@
+from tumblepipe.pipe.houdini.nodes import button
 """th::lpe_tags: name light groups for light-path-expression AOVs."""
 
 
@@ -16,6 +17,7 @@ def generate_report(proposals, source_path: str) -> str:
     return f"Generated {tag_count} {tags} from {light_count} {lights}."
 
 
+@button('Lpe Tags')
 def generate(kwargs):
     """Fill the tag rows from how the lights in the stage are named.
 

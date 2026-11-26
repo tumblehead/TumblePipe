@@ -286,7 +286,7 @@ fn referenced_by_exports(
     notes: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) -> Option<HashSet<Key>> {
-    let Some(export) = roots.path("export") else { return Some(HashSet::new()) };
+    let export = roots.path("export");
     if !export.is_dir() {
         return Some(HashSet::new());
     }

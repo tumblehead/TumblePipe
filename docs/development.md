@@ -222,17 +222,20 @@ Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `hdapaths`, `reports`, `tests`,
 `rust`, `delegate`, `harness`, `qt`, `hython`.
 
 `rust` runs `cargo fmt --check`, clippy with `-D warnings` and
-`cargo test --locked` in `src/resolver`, `src/wizard` and `src/delegate` (on Windows inside vcvars64's environment), then the player
+`cargo test --locked` in `src/resolver`, `src/wizard` and `src/delegate` (on Windows inside vcvars64's environment,
+`_build_common.msvc_env`, which fails without Visual Studio), clippy again for
+`src/delegate` with its `gpu` feature (the GPU path the Windows release
+ships), then the player
 workspace's crates that link no FFmpeg (`th_pipe`, `th_edit`,
-`th_playlist`, `th_cleanup`) on their own, so they run even where the player
+`th_playlist`, `th_cleanup`, `th_window`) on their own, so they run even where the player
 build cannot (`th_pipe` pins every copy of the config layout version), then
 `.ci/build_player.py --test` for the player workspace: `cargo fmt --check`,
 clippy with `-D warnings` and the whole workspace's tests, in the release
 build's FFmpeg and OpenColorIO environment. The first run in a fresh
 checkout builds FFmpeg into `build-ffmpeg-<platform>/`, which takes a while;
-a worktree can junction (or symlink) that folder from the main checkout. It
-is the local half of `.ci/test.sh`, which the CI workers run on a manual
-`RUN=tests` pipeline.
+a worktree can junction (or symlink) that folder from the main checkout.
+`.ci/test.sh`, which the CI workers run on a manual `RUN=tests` pipeline,
+runs these same stages: `preflight.py --ci --only rust delegate tests`.
 
 `delegate` builds the playblast delegate (`.ci/build_delegate.py`, into
 `plugins/houdini<major>/`) and renders `.ci/smoke_delegate.py`'s stages
@@ -242,7 +245,8 @@ on Windows, the GPU. The C++ shim compiles only against a real Houdini and
 no `cargo test` reaches it, so work that touches `src/delegate/` needs
 `preflight.py --only delegate` too. Majors come from `$HPM_HOUDINI_MAJORS`,
 else 22; on a machine with no Houdini (husk) installed the stage prints
-SKIPPED and passes. It takes a few minutes.
+SKIPPED and passes, and with `--ci` (the workers) it fails instead. It takes
+a few minutes.
 
 `hdapy` runs `.ci/quality_gates/check_hda_python.py`: the `PythonModule` and
 event-script sections of every expanded HDA under `otls/` are extensionless,
@@ -373,6 +377,16 @@ widget stacks involved are pure PySide6:
 
 - `verify_database_editor_ux.py` — the config editor's commit model
   (click-away/Enter/Tab commit, key renames, reverts).
+- `verify_json_editor_menus.py` — the config editor's right-click menus on
+  random documents: each row (and the empty space, the document itself)
+  offers exactly what it allows (Add, Move by its place, Convert to every
+  other type, Remove, Revert only on an edit; none on an inherited value),
+  and each action, fired with `QAction.trigger()` as a click does, edits the
+  document like a plain dict / list and raises nothing. A slot whose
+  signature no longer fits raises inside Qt, which prints and swallows it,
+  so the harness counts those. It found the empty space's Add Field
+  raising, a boolean row missing Convert → integer (`isinstance(True,
+  int)`), and Add Item failing on an array whose first item is null.
 - `verify_process_dialog_ux.py` — the process dialog's execution UX
   (running-child status label, progress breadcrumbs, the
   cancel-leaves-steps-unrun warning, exported-version reporting, the
@@ -543,12 +557,14 @@ Three rules:
 A th:: node's parm **button** that fails because a parm does not resolve
 (Entity on `from_context` in a Multi workfile, a camera not on the stage)
 raises `NodeError` (`nodes.py`, built with `self._error(...)`), whose message
-already says what to set. Wrap that callback in
-`with ns.node_errors_as_message('<Node>'):` so the message shows as a plain
-warning dialog. Left alone, Houdini puts it up as a Python traceback, which
-artists report as "the node is broken" (Magnus on `th::playblast`). Any
-other exception keeps its traceback, and without a UI the `NodeError` raises
-too. The playblast LOP and SOP use it so far.
+already says what to set. Every module function a DialogScript callback
+names is decorated with `@button('<Title>')` (`nodes.button`), so the
+message shows as a plain warning dialog. Left alone, Houdini puts it up as
+a Python traceback, which artists report as "the node is broken" (Magnus on
+`th::playblast`). Any other exception keeps its traceback, and without a UI
+the `NodeError` raises too. `tests/test_hda_buttons.py` fails on a callback
+added without it. Entry points that are not parm callbacks (a shelf tool, a
+radial entry) use `with ns.node_errors_as_message('<Title>'):` directly.
 
 The deliberate opt-outs are the crash-time emergency save and the timed
 Autosave (`_save_scene(..., report_failures=False)`). The emergency save's
@@ -1036,7 +1052,9 @@ workspace:
   would make its folders an environment and hide them). In
   `cleanup-app`, `progress.rs` checks that Indexing only rises and is
   never full early and that Sizing is full exactly when all six are
-  done, and `app_icon.rs` that `_NET_WM_ICON` packs every pixel as ARGB.
+  done; `th_window` (`window/`, the app icon both apps share) that
+  `_NET_WM_ICON` packs every pixel as ARGB, that only 8-bit RGBA icons
+  read, and that both apps' icons read with their accents.
   A scan is bound by the share, not the CPU. Measured read-only on
   HideAndReek (2.5 TB, 478k files, a 100 Mbit/s link) before the change:
   listing the files 46 s (the render root 33 s of it), sorting them with
@@ -1413,13 +1431,16 @@ The tests:
   (`--check` says whether the committed files are current, comparing PNGs
   by pixels; `test_cinedex_icon` runs it in the suite). `build.rs`
   embeds `icon/cinedex.ico` as the Windows executable's resource
-  (`embed-resource`), and `app_icon.rs` sets it on each window at run time
-  (Windows `WM_SETICON`, X11 `_NET_WM_ICON`, the macOS dock icon; Wayland
-  takes its icon from a `.desktop` file, which is not installed). Clean Up
-  Project's icon (`cleanup-app/icon/`, its sibling: the same tile, version
-  slabs cut by a jade sweep) is made the same way by
-  `scripts/cleanup_icon.py` (`test_cleanup_icon`), with its own `build.rs`
-  and `app_icon.rs` (a copy of Cinedex's, called from the window's view).
+  (`embed-resource`), and `app_icon.rs` has the workspace's `th_window`
+  crate (`window/`) set it on each window at run time (Windows
+  `WM_SETICON`, X11 `_NET_WM_ICON`, the macOS dock icon; Wayland takes its
+  icon from a `.desktop` file, which is not installed). Clean Up Project's
+  icon (`cleanup-app/icon/`, its sibling: the same tile, version slabs cut
+  by a jade sweep) is made the same way by `scripts/cleanup_icon.py`
+  (`test_cleanup_icon`), with its own `build.rs` and an `app_icon.rs` that
+  hands its PNGs to `th_window` the same way, from the window's view.
+  `th_window` also finds this process's X11 windows for Cinedex's Live
+  view raise (`raise.rs`).
   The editor reads the batches every 5 s off the UI
   thread (`Message::PollPreviews`) and `tracks.rs` draws the **Preview
   ready** badge on a shot clip while one of its previews is of a
@@ -3021,7 +3042,7 @@ Alpha (`th:alpha`, a transparent background): a sample nothing opaque
 covers gets coverage `1 - reveal`, so see-through surfaces add partial
 alpha and the colour stays premultiplied.
 
-Picking (`th_render_ids`, the viewer's selection): the nearest surface a
+Picking (`th_render_scene` ids, the viewer's selection): the nearest surface a
 pixel's first sample sees, see-through or not, so clicking a window selects
 the glass, as in Houdini's GL viewer. The CPU path keeps the nearest
 see-through depth per pixel (`Samples::near`) for it; the GPU path draws
@@ -3240,14 +3261,14 @@ set). That decides `th:interactive`'s default:
   frame, and the core draws on the GPU where it was built with it and an
   adapter works (CPU otherwise). husk and the farm stay on the CPU unless
   asked, so their frames match a worker with no GPU.
-- **Cancellation** goes through `th_render_ids(..., cancel)`: the Rust side
+- **Cancellation** goes through `th_render_scene(..., cancel, ...)`: the Rust side
   installs a thread-local `cancel::Token` for the call, the rasteriser
   checks it between band batches and inside the pool, the post pass skips
   occlusion, and a cancelled call returns `TH_CANCELLED` (3) without
   writing the caller's buffers.
-- **Ids:** `th_render_ids` also writes, per pixel, the index of the caller's
+- **Ids:** `th_render_scene` also writes, per pixel, the index of the caller's
   mesh and the instance seen by sample 0 of the first layer (-1 for none),
-  remapped past the views `th_render` skips; the shim maps them to Hydra's
+  remapped past the views the core skips; the shim maps them to Hydra's
   primId and (for instanced meshes) instanceId. The shim asks for ids only
   when a primId or instanceId buffer is bound (the viewer's picking), so a
   husk or farm frame does not pay for them. The GPU path makes them too: a

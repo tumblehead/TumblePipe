@@ -17,17 +17,17 @@ config = {
     'fps': 'int',
     'res': ['int', 'int'],
     'look': {                      # see valid_look
-        'renderer': 'viewport' | 'karma',   # optional, absent = 'karma'
-        'shading': 'lit' | 'clay' | 'albedo' | 'occlusion',  # viewport only; optional, absent = 'lit'
-        'lighting': 'scene' | 'headlight',  # viewport only; optional, absent = 'scene'
-        'cull': 'off' | 'back',    # viewport only; optional, absent = 'off'
-        'transparency': 'on' | 'off',  # viewport only; optional, absent = 'on'
+        'renderer': 'viewport' | 'karma',
+        'shading': 'lit' | 'clay' | 'albedo' | 'occlusion',  # viewport only
+        'lighting': 'scene' | 'headlight',  # viewport only
+        'cull': 'off' | 'back',    # viewport only
+        'transparency': 'on' | 'off',  # viewport only
         'light': 'dome' | 'headlight' | 'scene',   # karma only
         'samples': 'int',          # karma only
         'materials': 'bool',       # karma only: scene materials, not clay
-        'motion_blur': 'bool',     # viewport only; optional, absent = off
-        'dof': 'bool',             # viewport only; optional, absent = off
-        'blur_samples': 'int'      # viewport only; optional, absent = 16
+        'motion_blur': 'bool',     # viewport only
+        'dof': 'bool',             # viewport only
+        'blur_samples': 'int'      # viewport only, BLUR_SAMPLES_RANGE
     },
     'input_path': 'string',        # collapsed staged USD, relative to job data
     'output_paths': ['string']     # versioned playblast mp4 + rolling daily mp4
@@ -93,9 +93,8 @@ PLAYBLAST_CULLS = ('off', 'back')
 #          (Discord, Martin 2026-11-12).
 PLAYBLAST_TRANSPARENCIES = ('on', 'off')
 
-# The look a playblast gets when its submission names none: a collapse job
-# submitted before the look existed. The dialog's defaults
-# (farm.submit.settings) match it; tests/test_submit_settings.py pins that.
+# The look Farm Submit's playblast defaults add up to (farm.submit.settings;
+# tests/test_submit_settings.py pins that).
 DEFAULT_LOOK = {
     'renderer': 'viewport', 'shading': 'lit', 'lighting': 'scene', 'cull': 'off',
     'transparency': 'on',
@@ -106,54 +105,10 @@ DEFAULT_LOOK = {
 # The viewport renderer's blurs (hdThPlayblast's blur module): motion blur
 # over the camera's shutter, depth of field from its lens, each averaged
 # over a look's blur_samples images (2 to 64, rounded up to a power of
-# two). A look submitted before the blurs existed has neither. Depth of
-# field is on by default, as in Houdini's viewport: a camera with no F-Stop
+# two). Depth of field is on by default, as in Houdini's viewport: a camera with no F-Stop
 # or Focus Distance draws sharp anyway (Discord, Auguu 2026-11-11: the
 # playblast lost the viewport's defocus).
 BLUR_SAMPLES_RANGE = (2, 64)
-DEFAULT_BLUR_SAMPLES = 16
-
-
-def look_renderer(look: dict) -> str:
-    """The renderer of a valid look. A look submitted before the renderer
-    existed was asked of Karma, and keeps it."""
-    return look.get('renderer', 'karma')
-
-
-def look_shading(look: dict) -> str:
-    """The viewport shading of a valid look. A look submitted before the
-    shading existed is lit, which is what it was drawn as."""
-    return look.get('shading', 'lit')
-
-
-def look_lighting(look: dict) -> str:
-    """What lights a valid look's viewport frame. A look submitted before
-    the lighting existed is lit by the scene, which is what it was drawn
-    with."""
-    return look.get('lighting', 'scene')
-
-
-def look_cull(look: dict) -> str:
-    """Which faces a valid look's viewport frame leaves out. A look
-    submitted before culling existed culls nothing."""
-    return look.get('cull', 'off')
-
-
-def look_transparency(look: dict) -> str:
-    """Whether a valid look's viewport frame shows through see-through
-    surfaces. A look submitted before the switch existed does, which is
-    what it was drawn with."""
-    return look.get('transparency', 'on')
-
-
-def look_blur(look: dict) -> tuple[bool, bool, int]:
-    """A valid look's viewport blurs: motion blur, depth of field, and blur
-    samples. A look submitted before the blurs existed is drawn sharp."""
-    return (
-        look.get('motion_blur', False),
-        look.get('dof', False),
-        look.get('blur_samples', DEFAULT_BLUR_SAMPLES),
-    )
 
 
 def valid_look(look) -> bool:
@@ -161,23 +116,21 @@ def valid_look(look) -> bool:
     culling, transparency and blurs, how Karma lights it, its samples, clay
     or materials."""
     if not isinstance(look, dict): return False
-    if look_renderer(look) not in PLAYBLAST_RENDERERS: return False
-    if look_shading(look) not in PLAYBLAST_SHADINGS: return False
-    if look_lighting(look) not in PLAYBLAST_LIGHTINGS: return False
-    if look_cull(look) not in PLAYBLAST_CULLS: return False
-    if look_transparency(look) not in PLAYBLAST_TRANSPARENCIES: return False
+    if look.get('renderer') not in PLAYBLAST_RENDERERS: return False
+    if look.get('shading') not in PLAYBLAST_SHADINGS: return False
+    if look.get('lighting') not in PLAYBLAST_LIGHTINGS: return False
+    if look.get('cull') not in PLAYBLAST_CULLS: return False
+    if look.get('transparency') not in PLAYBLAST_TRANSPARENCIES: return False
     if not check_str(look, 'light'): return False
     if look['light'] not in PLAYBLAST_LIGHTS: return False
     if not check_int(look, 'samples'): return False
     if look['samples'] < 1: return False
     if not check_bool(look, 'materials'): return False
     for key in ('motion_blur', 'dof'):
-        if key in look and not check_bool(look, key): return False
-    if 'blur_samples' in look:
-        if not check_int(look, 'blur_samples'): return False
-        low, high = BLUR_SAMPLES_RANGE
-        if not low <= look['blur_samples'] <= high: return False
-    return True
+        if not check_bool(look, key): return False
+    if not check_int(look, 'blur_samples'): return False
+    low, high = BLUR_SAMPLES_RANGE
+    return low <= look['blur_samples'] <= high
 
 
 def is_valid_context(config) -> bool:

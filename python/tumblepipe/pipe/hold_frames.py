@@ -19,6 +19,7 @@ Pure: no Houdini, no disk.
 """
 
 from typing import Iterable, Optional
+from tumblepipe.util.text import ordinal
 
 AUTO = 'auto'
 EMPTY = 'empty'
@@ -67,16 +68,10 @@ def hold_expression(first: int, last: int, step: int = 1, frame: str = '$F') -> 
     )
 
 
-def _ordinal(number: int) -> str:
-    if 10 <= number % 100 <= 20: suffix = 'th'
-    else: suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th')
-    return f'{number}{suffix}'
-
-
 def _check_note(steps: list[int]) -> str:
     if not steps: return ''
     if len(steps) > 1: return 'check renders'
-    if steps[0] > 1: return f'a check render, every {_ordinal(steps[0])} frame'
+    if steps[0] > 1: return f'a check render, every {ordinal(steps[0])} frame'
     return 'a check render'
 
 

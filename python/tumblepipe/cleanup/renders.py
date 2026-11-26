@@ -253,13 +253,7 @@ def _edit_files(roots) -> list[Path]:
     """Every edit document: the working versions (the ``edits`` root) and
     the published ones (``export/edits``), with their ``.otio``."""
     files = []
-    folders = []
-    edits = roots.get('edits')
-    if edits is not None:
-        folders.append(edits.path)
-    export = roots.get('export')
-    if export is not None:
-        folders.append(export.path / 'edits')
+    folders = [roots.get('edits').path, roots.get('export').path / 'edits']
     for folder in folders:
         for dirpath, dirs, names in os.walk(long_path(folder)):
             dirs[:] = [d for d in dirs if d not in ('_deleted', '_context', 'media')]
@@ -329,8 +323,7 @@ def pinned(
             continue
         for pin in edit_pins(data):
             by_edit.update(index.matching(pin))
-    edit_root = roots.get('edit')
-    manifest = _read_json(edit_root.path / 'manifest.json') if edit_root is not None else None
+    manifest = _read_json(roots.get('edit').path / 'manifest.json')
     for shot, layer, department, version in manifest_pins(manifest):
         # The shot's URI (``entity:/shots/<sequence>/<shot>``), as its folders.
         segments = [part for part in re.split(r'[\\/]', shot.split(':', 1)[-1]) if part]
@@ -476,7 +469,7 @@ def _movie_units(item, units: dict[str, Unit]) -> list[str]:
 def plan(roots, inventory, settings: Settings, *, workfiles: hip.Workfiles) -> CategoryPlan:
     out = CategoryPlan('renders', 'Old render versions', 'version')
     render_root = roots.get('render')
-    if render_root is None or inventory is None:
+    if inventory is None:
         return out
     out.payload = render_root.path
     units, movies = list_units(inventory)

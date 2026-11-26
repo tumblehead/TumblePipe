@@ -1,13 +1,11 @@
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
 import shutil
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
-from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import houdini
 from tumblepipe.farm.specs import frame_ranges as frame_list
@@ -182,10 +180,7 @@ def from_jpg_frames(
     if not plan:
         raise ValueError(f'No frames to encode: {framestack_path}')
     name, _, suffix = framestack_path.name.split('.')
-    base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    base_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
-        temp_dir_path = Path(temp_dir)
+    with project_temp_dir() as temp_dir_path:
         for movie_frame, frame in plan:
             shutil.copyfile(
                 framestack_path.parent / f'{name}.{frame:04d}.{suffix}',
@@ -277,10 +272,7 @@ def _encode_sequence(
     }
 
     # Open temporary workspace
-    base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    base_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
-        temp_dir_path = Path(temp_dir)
+    with project_temp_dir() as temp_dir_path:
 
         # Each frame of the movie, a rendered frame or the one filling in
         plan = fill_plan(frame_range.first_frame, frame_range.last_frame, available_frame_indices)
@@ -316,10 +308,7 @@ def scale(
         )
     
     # Open temporary workspace
-    base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    base_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
-        temp_dir_path = Path(temp_dir)
+    with project_temp_dir() as temp_dir_path:
 
         # Temporary paths
         temp_output_path = temp_dir_path / 'output.mp4'

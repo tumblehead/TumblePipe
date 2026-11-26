@@ -12,6 +12,38 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.131.0 — 2026-11-25
+
+### Fixes
+- fix(save): never save an older scene over a newer version without asking (`7c37cb12`)
+- fix(tests): light names in test_import_render_cables never end in the variance suffix (`79576228`)
+- fix(farm-specs): one comp-after-a-render rule for render pipeline, stage and collapse (`20820eb5`)
+- fix(preflight): the tests stage runs minigun with PYTHONUTF8=1 (`9cb654ba`)
+- fix(entity-editor): Apply's warning names every follow-up that failed (`d23ef861`)
+- fix(config-editor): Delete reverts an override of a null inherited value (`c0e21d25`)
+- fix(cop): Composite refuses fewer than two COPs with a message (`eb7bc92e`)
+
+### Refactors
+- refactor(farm): validate every pipeline config at build, refuse with ValueError (`b352c192`)
+- refactor(farm): one render request from RenderPlan to the direct, collapse and stage paths (`ece6abda`)
+- refactor(tests): one hpm-package finder for the suite, preflight and harnesses (`c6eb933a`)
+
+### Documentation
+- docs(troubleshooting): the older-scene entry names 1.131.0 (`701d75e7`)
+- docs(save): the newer-version question everywhere a save is described (`eaef5b04`)
+- docs: thirteen test modules need cargo; create_recipe's caller is the radial menu (`e3b8fe36`)
+
+### Tests
+- test(save): a scene switch, the Alt+D jump and two Houdinis keep newer work (`4faaebaf`)
+- test(submit): the resolver emits every batch field batch_submit reads, and a complete look (`e9bd6b98`)
+- test(farm): every pipeline config the submit and workers build passes its spec (`fb399242`)
+- test(farm): the direct, collapse and stage paths hand the render pipeline one config (`4734a116`)
+- test(batch-submit): every built collapse and stage config passes its job's spec (`1992b350`)
+- test: one spec of the newest hpm package, run against all four finders (`95eb5b83`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.130.0 (`1bf19634`)
+
 ## v1.130.0 — 2026-11-25
 
 ### Features

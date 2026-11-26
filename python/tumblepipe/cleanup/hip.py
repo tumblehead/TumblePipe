@@ -101,7 +101,7 @@ def latest_workfiles(roots: ProjectRoots) -> list[LatestWorkfile]:
     found = []
     for purpose in ('assets', 'shots', 'groups'):
         root = roots.get(purpose)
-        if root is None or not root.path.is_dir():
+        if not root.path.is_dir():
             continue
         others = {long_path(r.path) for r in roots.roots if r.path != root.path}
         for dirpath, dirs, files in os.walk(long_path(root.path)):

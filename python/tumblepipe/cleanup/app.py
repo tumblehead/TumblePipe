@@ -27,6 +27,8 @@ from pathlib import Path
 
 from tumblepipe.archive.roots import project_roots
 from tumblepipe.cleanup import core, overview
+from tumblepipe.util.text import human_bytes
+from tumblepipe.util.hfs import add_houdini_dll_directory
 
 _CONTEXTS = (
     ('Shots and assets', None),
@@ -70,15 +72,6 @@ def sentence(about: str) -> str:
     keeps its case."""
     head = about if about.startswith('th::') else about[:1].upper() + about[1:]
     return head + '.'
-
-
-def _add_houdini_dll_directory() -> None:
-    """Let PySide6 load: Python 3.8+ on Windows ignores PATH."""
-    hfs = os.environ.get('HFS')
-    if hfs and hasattr(os, 'add_dll_directory'):
-        bin_dir = Path(hfs) / 'bin'
-        if bin_dir.is_dir():
-            os.add_dll_directory(str(bin_dir))
 
 
 def build_window():
@@ -238,7 +231,7 @@ QPushButton:disabled {{ background-color: {BG_MID}; color: {TEXT_DIM}; border-co
             root.addWidget(_title(f'Delete from {project}?'))
             root.addWidget(_banner(
                 STALE_COLOUR,
-                f'{core.human(view.size)} in all. {overview.confirm_note(view.categories)}',
+                f'{human_bytes(view.size)} in all. {overview.confirm_note(view.categories)}',
             ))
             self.lines = QTreeWidget()
             self.lines.setStyleSheet(_list_style())
@@ -251,7 +244,7 @@ QPushButton:disabled {{ background-color: {BG_MID}; color: {TEXT_DIM}; border-co
                 if category.to_delete:
                     item = QTreeWidgetItem(self.lines, [
                         category.title, overview.plural(category.to_delete, category.noun),
-                        core.human(category.size),
+                        human_bytes(category.size),
                     ])
                     for column in (1, 2):
                         item.setTextAlignment(column, Qt.AlignRight | Qt.AlignVCenter)
@@ -580,7 +573,7 @@ QPushButton:disabled {{ background-color: {BG_MID}; color: {TEXT_DIM}; border-co
             failed = sum(len(errors) for _removed, _bytes, errors in results.values())
             removed = sum(count for count, _bytes, _errors in results.values())
             freed = sum(size for _count, size, _errors in results.values())
-            self.headline.setText(f'{core.human(freed)} freed')
+            self.headline.setText(f'{human_bytes(freed)} freed')
             self.headline.setStyleSheet(
                 f'font-size: {FONT_BODY + 9}px; font-weight: 600; color: {CURRENT_COLOUR};'
             )
@@ -598,7 +591,7 @@ QPushButton:disabled {{ background-color: {BG_MID}; color: {TEXT_DIM}; border-co
 
 def main(argv: list[str] | None = None) -> int:
     argparse.ArgumentParser(prog='python -m tumblepipe.cleanup.app').parse_args(argv)
-    _add_houdini_dll_directory()
+    add_houdini_dll_directory()
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication(sys.argv[:1])

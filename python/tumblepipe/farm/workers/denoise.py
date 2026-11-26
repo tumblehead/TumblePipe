@@ -26,22 +26,19 @@ own coverage (the part that honours holdouts, which the old separate `alpha`
 AOV did not), so it is carried around the denoise untouched and published
 back onto the denoised RGB.
 """
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import shutil
 import sys
-import os
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
 from tumblepipe.util.io import store_json
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.util.uri import Uri
 from tumblepipe.apps.app import CommandFailed
 from tumblepipe.apps.houdini import IDenoise
-from tumblepipe.apps.deadline import log_progress
+from tumblepipe.apps.app import log_progress
 from tumblepipe.apps import exr
 from tumblepipe.pipe import review_events
 from tumblepipe.farm import worker
@@ -260,27 +257,14 @@ def main(
 
     # Check that OCIO has been set. idenoise needs no colour config, but an
     # unset OCIO means the farm env was not built properly -- fail fast.
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
     # Print environment variables for debugging
     print_env()
 
     # Find missing output receipts
-    receipt_paths = [
-        frame_file(receipt_path, frame_index)
-        for frame_index in render_range
-    ]
-    # Into version (#92) denoises frames whose receipts exist: a frame
-    # being repaired has one.
-    missing_receipt_paths = [
-        output_receipt_path
-        for output_receipt_path in receipt_paths
-        if overwrite or not output_receipt_path.exists()
-    ]
-    if len(missing_receipt_paths) == 0:
+    missing_receipt_paths = worker.missing_receipts(receipt_path, render_range, overwrite)
+    if not missing_receipt_paths:
         print('Output receipts already exist')
         return 0
     missing_frames = [
@@ -352,10 +336,7 @@ def main(
 
     # Denoise the input frames
     headline('Denoising')
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
         for frame_index in log_progress(missing_frames):
             print(f'Denoising frame {frame_index}')
             written, failed = _denoise_frame(
@@ -410,8 +391,7 @@ def main(
         })
 
     # Check that the missing receipts were generated
-    for current_receipt_path in missing_receipt_paths:
-        if current_receipt_path.exists(): continue
+    for current_receipt_path in worker.unwritten(missing_receipt_paths):
         return error(f'Output receipt not found: {current_receipt_path}')
     review_events.announce_written(output_paths.values())
 

@@ -1,4 +1,5 @@
 
+import functools
 from contextlib import contextmanager
 
 import hou
@@ -67,6 +68,21 @@ def node_errors_as_message(title: str):
         hou.ui.displayMessage(
             str(exc), title=title, severity=hou.severityType.Warning,
         )
+
+
+def button(title: str):
+    """Decorate an HDA parm callback (``fn(kwargs)``, named in a
+    DialogScript) so a :class:`NodeError` it raises is shown as a message
+    titled ``title`` (see :func:`node_errors_as_message`). Without a UI it
+    still raises: the publish worker reaches ``execute`` callbacks on the
+    farm."""
+    def decorate(callback):
+        @functools.wraps(callback)
+        def run(*args, **kwargs):
+            with node_errors_as_message(title):
+                return callback(*args, **kwargs)
+        return run
+    return decorate
 
 
 class Node:

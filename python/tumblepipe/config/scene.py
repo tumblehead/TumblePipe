@@ -293,6 +293,89 @@ def set_scene_assets_in(store: JsonConfigStore, scene_uri: Uri, assets: list[Ass
     store.set_own_properties(scene_uri, own)
 
 
+def _root_assets(store: JsonConfigStore, scene_uri: Uri) -> list[AssetEntry]:
+    scene = get_scene_by_uri_in(store, scene_uri)
+    if scene is None:
+        raise ValueError(f"Root {scene_uri} does not exist")
+    return list(scene.assets)
+
+
+def add_root_members_in(
+    store: JsonConfigStore, scene_uri: Uri, members: list[Uri],
+) -> tuple[int, int, set[str]]:
+    """Add shots and assets to the Root at ``scene_uri``: ``(added, skipped,
+    skip reasons)``. A shot joins by its ``scene_ref`` naming this Root; an
+    asset joins the Root's asset list with one instance on the default
+    channel, and one the list already holds is skipped. Entries already held
+    keep their place, count and channel. The caller has refused anything
+    that is neither (``containers.refusal``)."""
+    held = _root_assets(store, scene_uri)
+    held_assets = {entry.asset for entry in held}
+    joined: list[AssetEntry] = []
+    added, skipped, reasons = 0, 0, set()
+    for member in members:
+        if member.segments[0] == "shots":
+            set_scene_ref_in(store, member, scene_uri)
+            added += 1
+            continue
+        # ``AssetEntry.asset`` is the URI's text: the JSON store does not
+        # serialise a Uri, and one stored raw vanished on the next read.
+        asset = str(member)
+        if asset in held_assets:
+            skipped += 1
+            reasons.add("already in Root")
+            continue
+        held_assets.add(asset)
+        joined.append(AssetEntry(asset=asset, instances=1))
+        added += 1
+    if joined:
+        set_scene_assets_in(store, scene_uri, held + joined)
+    return added, skipped, reasons
+
+
+def remove_root_members_in(
+    store: JsonConfigStore, scene_uri: Uri, members: list[Uri],
+) -> tuple[int, int]:
+    """Take shots and assets out of the Root at ``scene_uri``: ``(removed,
+    skipped)``. A shot's ``scene_ref`` is cleared only when it names this
+    Root (another Root's shot is skipped); an asset's entries leave the
+    list. An asset the Root does not hold is neither."""
+    held = _root_assets(store, scene_uri)
+    removed, skipped = 0, 0
+    leaving: set[str] = set()
+    for member in members:
+        if member.segments[0] != "shots":
+            leaving.add(str(member))
+        elif get_scene_ref_in(store, member) == scene_uri:
+            set_scene_ref_in(store, member, None)
+            removed += 1
+        else:
+            skipped += 1
+    kept = [entry for entry in held if entry.asset not in leaving]
+    if len(kept) != len(held):
+        removed += len(held) - len(kept)
+        set_scene_assets_in(store, scene_uri, kept)
+    return removed, skipped
+
+
+def set_root_assets_in(store: JsonConfigStore, scene_uri: Uri, assets: list[Uri]) -> bool:
+    """Make the Root at ``scene_uri`` hold exactly ``assets``: entries it
+    already holds stay as they are, in place; a new asset joins at the end
+    with one instance on the default channel. True when the list changed."""
+    held = _root_assets(store, scene_uri)
+    wanted = list(dict.fromkeys(str(asset) for asset in assets))
+    kept = [entry for entry in held if entry.asset in wanted]
+    held_assets = {entry.asset for entry in held}
+    result = kept + [
+        AssetEntry(asset=asset, instances=1)
+        for asset in wanted if asset not in held_assets
+    ]
+    if result == held:
+        return False
+    set_scene_assets_in(store, scene_uri, result)
+    return True
+
+
 def get_inherited_assets_in(store: JsonConfigStore, scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
     """
     Get all assets inherited from parent scenes.

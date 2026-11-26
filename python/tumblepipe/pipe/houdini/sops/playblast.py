@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from tumblepipe.api import api, path_str
+from tumblepipe.api import path_str, project_temp_dir
 from tumblepipe.apps import mp4
 from tumblepipe.pipe.playblast_publish import publish_playblast, reserved_next_playblast
 from tumblepipe.config.multi_timeline import shift_block_range
@@ -15,6 +13,7 @@ from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.pipe.paths import get_daily_path
 from tumblepipe.pipe.usd.render_settings import live_playblast_keep_paths
 from tumblepipe.util.uri import Uri
+from tumblepipe.pipe.houdini.nodes import button
 
 
 @dataclass(frozen=True)
@@ -116,13 +115,10 @@ class Playblast(PlayblastNodeMixin, TimeOffsetNode, EntityNode):
         fps, res = plan.fps, plan.res
         output_daily_path = get_daily_path(entity_uri, department_name)
 
-        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-        root_temp_path.mkdir(parents=True, exist_ok=True)
         with (
             reserved_next_playblast(entity_uri, department_name) as output_playblast_path,
-            TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir,
+            project_temp_dir() as temp_dir_path,
         ):
-            temp_dir_path = Path(temp_dir)
             cache_path = temp_dir_path / 'cache.usd'
             jpg_path = temp_dir_path / 'jpg' / 'playblast.$F4.jpg'
             movie_path = temp_dir_path / 'playblast.mp4'
@@ -188,24 +184,25 @@ def on_created(raw_node):
     node = Playblast(raw_node)
     node._initialize()
 
+@button('Playblast')
 def export(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    with ns.node_errors_as_message('Playblast'):
-        node.playblast()
+    node.playblast()
 
+@button('Playblast')
 def view_latest(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    with ns.node_errors_as_message('Playblast'):
-        node.view_latest()
+    node.view_latest()
 
+@button('Playblast')
 def open_location(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    with ns.node_errors_as_message('Playblast'):
-        node.open_location()
+    node.open_location()
 
+@button('Playblast')
 def select(kwargs):
     """Entity button."""
     Playblast(kwargs['node']).pick_entity('Select Shot')

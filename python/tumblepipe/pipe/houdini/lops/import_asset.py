@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 
 
-from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
 from tumblepipe.pipe.usd.sublayer_refs import generate_staged_sublayer_uri
@@ -13,9 +12,11 @@ from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 from tumblepipe.pipe.paths import (
-    current_staged_path,
+    get_latest_staged_path,
+    get_staged_base_path,
     list_version_paths
 )
+from tumblepipe.pipe.houdini.nodes import button
 
 def _staged_context_assets(staged_file_path: Path) -> list[dict]:
     """Tracked sub-assets recorded next to a staged file.
@@ -121,15 +122,7 @@ class ImportAsset(EntityNode):
         if asset_uri is None:
             return ['latest', 'current']
 
-        # Get staged directory for the selected channel
-        # (_staged/<channel>/v####, mirroring import_shot)
-        staged_uri = (
-            Uri.parse('export:/') /
-            asset_uri.segments /
-            '_staged' /
-            self.get_channel_name()
-        )
-        staged_path = api.storage.resolve(staged_uri)
+        staged_path = get_staged_base_path(asset_uri, self.get_channel_name())
 
         # Get versioned directories (v0001, v0002, etc.)
         version_paths = list_version_paths(staged_path)
@@ -149,7 +142,7 @@ class ImportAsset(EntityNode):
             # What the resolver's latest mode loads: the newest finished build
             asset_uri = self.get_entity_uri()
             if asset_uri is not None:
-                latest = current_staged_path(asset_uri, self.get_channel_name())
+                latest = get_latest_staged_path(asset_uri, self.get_channel_name())
                 if latest is not None:
                     version_name = latest.name
         self.parm('version_label').set(version_name)
@@ -175,7 +168,7 @@ class ImportAsset(EntityNode):
         else:
             resolver.set_latest_mode(False)
             if version_name == 'current':
-                current_path = current_staged_path(asset_uri, channel_name)
+                current_path = get_latest_staged_path(asset_uri, channel_name)
                 if current_path is None:
                     self.parm('import_filepath1').set('')
                     ns.set_node_comment(native, "Bypassed: No staged file found")
@@ -300,11 +293,13 @@ def on_created(raw_node):
     # deliberate choice.
     node._update_labels()
 
+@button('Import Asset')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportAsset(raw_node)
     node.execute()
 
+@button('Import Asset')
 def select(kwargs):
     """Entity button: pick the asset, then import it."""
     node = ImportAsset(kwargs['node'])

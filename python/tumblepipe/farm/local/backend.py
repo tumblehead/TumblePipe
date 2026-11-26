@@ -2,7 +2,7 @@
 
 :class:`LocalFarm` stands beside ``apps.deadline.Deadline``: the same
 ``submit(batch, jobs_path)``, writing the same job folder
-(``apps.deadline.write_job_files``), but the batch is queued here
+(``farm.job.write_job_files``), but the batch is queued here
 (``farm.local.queue``) and this machine's runner started.
 
 Every job's env file carries ``TH_FARM_BACKEND=local``, so a task that
@@ -16,7 +16,7 @@ import platform
 from pathlib import Path
 
 from tumblepipe.api import get_user_name, path_str
-from tumblepipe.apps.deadline import job_extra_info, open_job_folder, write_job_files
+from tumblepipe.farm.job import job_extra_info, open_job_folder, write_job_files
 from tumblepipe.farm import backend as farm_backend
 from tumblepipe.farm.local import queue, runner
 
@@ -34,7 +34,7 @@ def job_entry(
     """The ``batch.json`` entry for ``job``, from what was written for the plugin.
 
     ``extra_info`` is what a Deadline job carries as ``ExtraInfoKeyValue``
-    pairs (``apps.deadline.job_extra_info``): the project and entity stamp.
+    pairs (``farm.job.job_extra_info``): the project and entity stamp.
     """
     if 'Manifest' not in plugin_info:
         raise ValueError(f'Job {job.name!r} has no hpm manifest; the local farm runs HPM jobs only')
@@ -50,7 +50,7 @@ def job_entry(
         'data_dir': plugin_info['StartupDirectory'],
         'env_file': plugin_info.get('EnvironmentFile'),
         'manifest': plugin_info['Manifest'],
-        # Deadline gets the same limit with frame timeouts on (apps.deadline).
+        # Deadline gets the same limit with frame timeouts on (farm.job.Job.job_info).
         'timeout': queue.task_timeout((job.max_frame_time or 0) * 60, frames, job.chunk_size),
         'outputs': [path_str(p) for p in job.output_paths],
         'priority': job.priority,

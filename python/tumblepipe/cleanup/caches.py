@@ -207,7 +207,7 @@ def referenced_by_exports(roots, units: dict, notes: list[str], errors: list[str
     except ImportError:
         return None
     export = roots.get('export')
-    if export is None or not export.path.is_dir():
+    if not export.path.is_dir():
         return set()
     paths: set[str] = set()
     read = 0

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .types import DEPT_ICONS, SHOT_DEPT_ICONS
+from .types import DEPT_ICONS, SHOT_DEPT_ICONS, tag_value
 
 if TYPE_CHECKING:
     from .dept_scope import DepartmentScope
@@ -54,23 +54,15 @@ class AssetHover:
         tags = list(asset.tags or ())
         metadata = asset.metadata or {}
 
-        type_tag = next(
-            (t.split(":", 1)[1] for t in tags if t.startswith("type:")), None
-        )
+        type_tag = tag_value(tags, "type")
         type_label = {
             "asset": "Asset",
             "shot": "Shot",
             "group": "Multi",
             "scene": "Root",
         }.get(type_tag, type_tag.title() if type_tag else "")
-        project = next(
-            (t.split(":", 1)[1] for t in tags if t.startswith("project:")),
-            None,
-        )
-        category = next(
-            (t.split(":", 1)[1] for t in tags if t.startswith("category:")),
-            None,
-        )
+        project = tag_value(tags, "project")
+        category = tag_value(tags, "category")
 
         root = QWidget()
         root.setStyleSheet(

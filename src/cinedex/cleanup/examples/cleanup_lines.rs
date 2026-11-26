@@ -191,7 +191,7 @@ fn make(project: PathBuf, settings: SettingsIn, only: Option<Vec<String>>, farm:
 
 /// A plan given as data (what Python listed), for the views.
 fn plan_from(categories: Vec<CategoryIn>) -> Plan {
-    let roots = ProjectRoots { project_path: PathBuf::new(), config_path: PathBuf::new(), roots: Vec::new() };
+    let roots = ProjectRoots { project_path: PathBuf::new(), config_path: PathBuf::new(), roots: Vec::new(), purposes: Vec::new() };
     let mut plan = Plan { roots, settings: Settings::default(), categories: Vec::new() };
     for category in categories {
         let mut out = CategoryPlan::new(&category.key, &category.title, &category.noun);

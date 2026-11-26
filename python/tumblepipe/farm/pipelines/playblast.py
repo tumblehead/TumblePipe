@@ -26,7 +26,7 @@ config = {
 from pathlib import Path
 
 from tumblepipe.api import path_str
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.farm.checks import checked
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import playblast as playblast_job

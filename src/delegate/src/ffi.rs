@@ -200,6 +200,36 @@ pub struct ThFrame {
     pub opaque: u32,
 }
 
+impl ThFrame {
+    /// A `width` x `height` frame through the camera, one sample a pixel,
+    /// every other setting off (zero, null): set the rest by struct update.
+    pub fn new(width: u32, height: u32, world_to_clip: [f64; 16], view_to_world: [f64; 16]) -> Self {
+        ThFrame {
+            width,
+            height,
+            world_to_clip,
+            view_to_world,
+            samples: 1,
+            shading: 0,
+            ao: 0,
+            blur_samples: 0,
+            motion: 0,
+            camera_keys: 0,
+            cameras: [0.0; 64],
+            focal_length: 0.0,
+            f_stop: 0.0,
+            focus_distance: 0.0,
+            alpha: 0,
+            gpu: 0,
+            linear_depth: 0,
+            lights: std::ptr::null(),
+            light_count: 0,
+            lighting: 0,
+            opaque: 0,
+        }
+    }
+}
+
 /// A UsdLux light as authored (`crate::lights::SceneLight`), the shim's
 /// enabled, visible light sprims.
 #[repr(C)]
@@ -390,7 +420,7 @@ pub extern "C" fn th_cache_create() -> *mut ThCache {
 
 /// # Safety
 /// `cache` must come from [`th_cache_create`], not be freed twice, and not
-/// be in use by a [`th_render`] call.
+/// be in use by a [`th_render_scene`] call.
 #[no_mangle]
 pub unsafe extern "C" fn th_cache_free(cache: *mut ThCache) {
     if !cache.is_null() {
@@ -470,63 +500,26 @@ pub unsafe extern "C" fn th_texture_free(texture: *mut Texture) {
     }
 }
 
-/// Render `meshes` into `color` (`width * height` linear RGBA floats) and
-/// `depth` (`width * height` floats, may be null), both row 0 at the top.
+/// Render `meshes` and `curves` into `color` (`width * height` linear RGBA
+/// floats) and `depth` (`width * height` floats, may be null), both row 0
+/// at the top. Curves views are basis curves and points ([`ThCurvesView`],
+/// [`crate::curves`]): camera-facing ribbons and discs made for this frame.
+/// `ids` (may be null): per texel, row 0 at the top, two ints, the index of
+/// the view and the instance (into its transforms) the texel's first sample
+/// sees, -1 -1 for none, on the CPU and the GPU path alike; meshes are
+/// `0..mesh_count`, curves view `j` is `mesh_count + j`.
+/// `cancel` (may be null) is checked while drawing: set it non-zero from
+/// another thread to give the frame up, and the call returns
+/// [`TH_CANCELLED`] having written nothing.
 /// `cache` (may be null) is the delegate's [`ThCache`]: with it the GPU path
 /// keeps the meshes that have a key on the card from one frame to the next.
 ///
 /// # Safety
-/// Every pointer in `frame` and `meshes` must be valid for the counts it is
-/// given with; `color` and `depth` for `width * height` texels; `cache` null
-/// or from [`th_cache_create`], used by one call at a time.
-#[no_mangle]
-pub unsafe extern "C" fn th_render(
-    frame: *const ThFrame,
-    meshes: *const ThMeshView,
-    mesh_count: u32,
-    color: *mut f32,
-    depth: *mut f32,
-    cache: *const ThCache,
-) -> i32 {
-    // SAFETY: th_render's contract is render_into's, without curves, ids or
-    // a cancel flag.
-    unsafe { render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, std::ptr::null_mut(), std::ptr::null(), cache) }
-}
-
-/// [`th_render`] for a viewport. Also writes `ids` (may be null): per
-/// texel, row 0 at the top, two ints, the index into `meshes` and the
-/// instance (into its transforms) the texel's first sample sees, -1 -1
-/// for none, on the CPU and the GPU path alike.
-/// `cancel` (may be null) is checked while drawing: set it non-zero from
-/// another thread to give the frame up, and the call returns
-/// [`TH_CANCELLED`] having written nothing.
-///
-/// # Safety
-/// As [`th_render`]; `ids` valid for `width * height * 2` ints, `cancel`
-/// for the whole call.
-#[no_mangle]
-pub unsafe extern "C" fn th_render_ids(
-    frame: *const ThFrame,
-    meshes: *const ThMeshView,
-    mesh_count: u32,
-    color: *mut f32,
-    depth: *mut f32,
-    ids: *mut i32,
-    cancel: *const AtomicU32,
-    cache: *const ThCache,
-) -> i32 {
-    // SAFETY: th_render_ids' contract is render_into's, without curves.
-    unsafe { render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, ids, cancel, cache) }
-}
-
-/// [`th_render_ids`] with basis curves and points as well ([`ThCurvesView`],
-/// [`crate::curves`]): camera-facing ribbons and discs made for this frame.
-/// In `ids`, curves view `j` is `mesh_count + j`, with the instance as for a
-/// mesh.
-///
-/// # Safety
-/// As [`th_render_ids`]; every pointer in `curves` valid for the counts it
-/// is given with.
+/// Every pointer in `frame`, `meshes` and `curves` must be valid for the
+/// counts it is given with; `color` and `depth` for `width * height`
+/// texels, `ids` for `width * height * 2` ints; `cancel` for the whole
+/// call; `cache` null or from [`th_cache_create`], used by one call at a
+/// time.
 #[no_mangle]
 pub unsafe extern "C" fn th_render_scene(
     frame: *const ThFrame,
@@ -619,7 +612,7 @@ unsafe fn make_strokes(frame: &Frame, views: &[ThCurvesView]) -> Vec<MadeStrokes
     out
 }
 
-/// What th_render, th_render_ids and th_render_scene do.
+/// What th_render_scene does.
 ///
 /// # Safety
 /// `frame` null or valid; `meshes` and `curves` null or valid for their
@@ -1005,7 +998,7 @@ mod tests {
             .filter(|s| s.starts_with("th_"))
             .map(|s| s.split('(').next().unwrap())
             .collect();
-        assert_eq!(declared.len(), 9, "{declared:?}");
+        assert_eq!(declared.len(), 7, "{declared:?}");
         assert_eq!(declared, exported);
     }
 
@@ -1046,38 +1039,41 @@ mod tests {
 
     #[test]
     fn render_rejects_bad_arguments_and_draws_an_empty_scene() {
-        let frame = ThFrame {
-            width: 8,
-            height: 4,
-            world_to_clip: crate::math::IDENTITY,
-            view_to_world: crate::math::IDENTITY,
-            samples: 1,
-            shading: 0,
-            ao: 1,
-            blur_samples: 0,
-            motion: 0,
-            camera_keys: 0,
-            cameras: [0.0; 64],
-            focal_length: 0.0,
-            f_stop: 0.0,
-            focus_distance: 0.0,
-            alpha: 0,
-            gpu: 0,
-            linear_depth: 0,
-            lights: std::ptr::null(),
-            light_count: 0,
-            lighting: 0,
-            opaque: 0,
-        };
+        let frame = ThFrame { ao: 1, ..ThFrame::new(8, 4, crate::math::IDENTITY, crate::math::IDENTITY) };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         let mut depth = vec![0.0f32; 8 * 4];
         // SAFETY: a null frame, or a live one with buffers sized for it.
         unsafe {
             assert_eq!(
-                th_render(std::ptr::null(), std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null()),
+                th_render_scene(
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null(),
+                    0,
+                    color.as_mut_ptr(),
+                    depth.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    std::ptr::null()
+                ),
                 TH_ERR_ARGS
             );
-            assert_eq!(th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null()), TH_OK);
+            assert_eq!(
+                th_render_scene(
+                    &frame,
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null(),
+                    0,
+                    color.as_mut_ptr(),
+                    depth.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    std::ptr::null()
+                ),
+                TH_OK
+            );
         }
         assert!(depth.iter().all(|&d| d == 1.0));
         assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1));
@@ -1085,35 +1081,27 @@ mod tests {
 
     #[test]
     fn caches_are_created_and_freed_and_null_is_no_cache() {
-        let frame = ThFrame {
-            width: 8,
-            height: 4,
-            world_to_clip: crate::math::IDENTITY,
-            view_to_world: crate::math::IDENTITY,
-            samples: 1,
-            shading: 0,
-            ao: 1,
-            blur_samples: 0,
-            motion: 0,
-            camera_keys: 0,
-            cameras: [0.0; 64],
-            focal_length: 0.0,
-            f_stop: 0.0,
-            focus_distance: 0.0,
-            alpha: 0,
-            gpu: 0,
-            linear_depth: 0,
-            lights: std::ptr::null(),
-            light_count: 0,
-            lighting: 0,
-            opaque: 0,
-        };
+        let frame = ThFrame { ao: 1, ..ThFrame::new(8, 4, crate::math::IDENTITY, crate::math::IDENTITY) };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         // SAFETY: a live frame and buffer; the cache is freed once.
         unsafe {
             let cache = th_cache_create();
             assert!(!cache.is_null());
-            assert_eq!(th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), cache), TH_OK);
+            assert_eq!(
+                th_render_scene(
+                    &frame,
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null(),
+                    0,
+                    color.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    cache
+                ),
+                TH_OK
+            );
             th_cache_free(cache);
             th_cache_free(std::ptr::null_mut());
         }

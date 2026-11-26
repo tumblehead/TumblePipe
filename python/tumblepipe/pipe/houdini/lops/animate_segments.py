@@ -175,7 +175,7 @@ def dive_outputs(dive_node) -> dict:
     Output 0, so placing a node in the dive does not recook what reads it."""
     from tumblepipe.pipe.houdini.lops import animate_points
     found = {}
-    output_type = animate_points._output_type()
+    output_type = animate_points.output_node_type()
     if dive_node is None or output_type is None:
         return found
     for node in output_type.instances():
@@ -244,7 +244,7 @@ def _owners(sop_node):
     in; None when its Segments do not apply (no rows: nothing more is
     read)."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
-    animate = animate_invoke._animate_node(sop_node)
+    animate = animate_invoke.enclosing_animate(sop_node)
     if animate is None or not _active(animate):
         return None
     rules, _problems, characters, scenes = _state(animate)
@@ -263,7 +263,7 @@ def segments_on(sop_node) -> int:
     outputs the APEX scene (the streams are joined), else 0 (the default
     invoke's output as it is)."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
-    return int(_active(animate_invoke._animate_node(sop_node)))
+    return int(_active(animate_invoke.enclosing_animate(sop_node)))
 
 
 def taken(sop_node) -> list:
@@ -278,7 +278,7 @@ def stream_path(sop_node, index: int) -> str:
     """`stream<index>`'s Object Merge path: the dive's Output SOP with
     Output Index `index`, '' without one."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
-    animate = animate_invoke._animate_node(sop_node)
+    animate = animate_invoke.enclosing_animate(sop_node)
     if animate is None or not _row_count(animate):
         return ''
     node = dive_outputs(animate.node('anim_dive')).get(index)
@@ -296,14 +296,14 @@ def stream_characters(sop_node, index: int) -> str:
     supplies on this frame but those whose row on the Characters list
     turns Geometry off (their skeletons still come, as Extra Outputs)."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
-    animate = animate_invoke._animate_node(sop_node)
+    animate = animate_invoke.enclosing_animate(sop_node)
     off = {name for name, geometry, _s in animate_invoke.rows(animate) if not geometry} if animate else set()
     return ' '.join(name for name in _owned(sop_node, index) if name not in off)
 
 
 def _stream_skeletons(sop_node, index: int) -> list:
     from tumblepipe.pipe.houdini.lops import animate_invoke
-    animate = animate_invoke._animate_node(sop_node)
+    animate = animate_invoke.enclosing_animate(sop_node)
     if animate is None:
         return []
     return animate_invoke.skeleton_characters(animate_invoke.rows(animate), _owned(sop_node, index))
@@ -362,7 +362,7 @@ def _folder_names(geo) -> list:
     from tumblepipe.pipe.houdini.lops import animate_invoke
     if geo is None or geo.findPrimAttrib('name') is None:
         return ['' for _ in (geo.prims() if geo is not None else ())]
-    return [animate_invoke._name(prim) for prim in geo.prims()]
+    return [animate_invoke.prim_name(prim) for prim in geo.prims()]
 
 
 def join(sop_node) -> None:

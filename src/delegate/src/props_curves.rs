@@ -8,38 +8,11 @@ use crate::blur::Blur;
 use crate::composite::Shading;
 use crate::curves::{self, Basis, Camera, Interp, Kind, Made, Strokes, Wrap};
 use crate::ffi::{th_render_scene, ThCurvesView, ThFrame, ThMeshView};
+use crate::fixtures::{abi_frame, camera, mesh_view};
 use crate::math::{self, Mat4, Vec3};
 use crate::raster::{self, Frame};
 use crate::TH_OK;
 use proptest::prelude::*;
-
-/// As props.rs's: a camera at z = 5 looking down -z, 90 degrees across.
-fn camera() -> (Mat4, Mat4) {
-    let mut view_to_world = math::IDENTITY;
-    view_to_world[14] = 5.0;
-    let mut world_to_view = math::IDENTITY;
-    world_to_view[14] = -5.0;
-    let (n, f) = (0.1f64, 100.0f64);
-    let proj: Mat4 = [
-        1.0,
-        0.0,
-        0.0,
-        0.0, //
-        0.0,
-        1.0,
-        0.0,
-        0.0, //
-        0.0,
-        0.0,
-        -(f + n) / (f - n),
-        -1.0, //
-        0.0,
-        0.0,
-        -2.0 * f * n / (f - n),
-        0.0,
-    ];
-    (math::mul(&world_to_view, &proj), view_to_world)
-}
 
 fn frame(width: usize, height: usize, samples: usize) -> Frame {
     let (world_to_clip, view_to_world) = camera();
@@ -421,33 +394,6 @@ proptest! {
     }
 }
 
-fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
-    let (world_to_clip, view_to_world) = camera();
-    ThFrame {
-        width,
-        height,
-        world_to_clip,
-        view_to_world,
-        samples,
-        shading: 0,
-        ao: 0,
-        blur_samples: 0,
-        motion: 0,
-        camera_keys: 0,
-        cameras: [0.0; 64],
-        focal_length: 0.0,
-        f_stop: 0.0,
-        focus_distance: 0.0,
-        alpha: 0,
-        gpu: 0,
-        linear_depth: 0,
-        lights: std::ptr::null(),
-        light_count: 0,
-        lighting: 0,
-        opaque: 0,
-    }
-}
-
 fn curves_view(kind: u32, points: &[Vec3], counts: &[i32], transforms: &[Mat4]) -> ThCurvesView {
     ThCurvesView {
         points: points.as_ptr() as *const f32,
@@ -527,7 +473,7 @@ proptest! {
         let wall = [[-40.0f32, -40.0, -30.0], [40.0, -40.0, -30.0], [40.0, 40.0, -30.0], [-40.0, 40.0, -30.0]];
         let wall_tris = [[0u32, 1, 2], [0, 2, 3]];
         let one = [math::IDENTITY];
-        let mesh = crate::props_curves::mesh_view(&wall, &wall_tris, &one);
+        let mesh = ThMeshView { polygonal: 1, ..mesh_view(&wall, &wall_tris, &one) };
         let counts = [curve_pts.len() as i32];
         let views = [curves_view(2, &curve_pts, &counts, &ta), curves_view(0, &dots, &[], &tb)];
         let (_, depth, ids) = abi_draw(&f, std::slice::from_ref(&mesh), &views);
@@ -551,31 +497,6 @@ proptest! {
                 prop_assert_eq!(d[p], depth[p], "pixel {}", p);
             }
         }
-    }
-}
-
-pub(crate) fn mesh_view(points: &[Vec3], triangles: &[[u32; 3]], transforms: &[Mat4]) -> ThMeshView {
-    ThMeshView {
-        points: points.as_ptr() as *const f32,
-        point_count: points.len() as u32,
-        triangles: triangles.as_ptr() as *const u32,
-        triangle_count: triangles.len() as u32,
-        corner_normals: std::ptr::null(),
-        corner_colors: std::ptr::null(),
-        corner_uvs: std::ptr::null(),
-        base_color: [0.6, 0.5, 0.4],
-        tiles: std::ptr::null(),
-        tile_count: 0,
-        transforms: transforms.as_ptr() as *const f64,
-        transform_count: transforms.len() as u32,
-        polygonal: 1,
-        key: 0,
-        version: 0,
-        points_close: std::ptr::null(),
-        transform_keys: std::ptr::null(),
-        transform_key_count: 0,
-        transparency: 0.0,
-        cull: 0,
     }
 }
 
@@ -691,7 +612,7 @@ proptest! {
         let meshes: Vec<ThMeshView> = mesh_holes
             .iter()
             .map(|h| {
-                let v = mesh_view(&points, &triangles, &transforms);
+                let v = ThMeshView { polygonal: 1, ..mesh_view(&points, &triangles, &transforms) };
                 match h {
                     Hole::None => v,
                     Hole::Points => ThMeshView { points: std::ptr::null(), ..v },

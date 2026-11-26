@@ -8,6 +8,7 @@ is then empty, and the buttons that read materials refuse with an error.
 
 import hou
 from pxr import UsdShade
+from tumblepipe.pipe.houdini.nodes import button
 
 
 def stage_materials(stage):
@@ -35,6 +36,7 @@ def _stage_or_error(node):
     return stage
 
 
+@button('Material Assigner')
 def init_materials(kwargs):
     """One assignment row per stage material; ctrl-click to choose which."""
     node = kwargs['node']
@@ -47,6 +49,7 @@ def init_materials(kwargs):
         node.parm(f'matspecpath{index}').set(str(material.GetPath()))
 
 
+@button('Material Assigner')
 def update_material_paths(kwargs):
     """Repoint each row at the stage material with the same name."""
     node = kwargs['node']

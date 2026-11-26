@@ -337,7 +337,7 @@ pub fn make_export_plan(
     workfiles: &Workfiles,
     watch: &Watch<'_>,
 ) -> Result<ExportPlan, String> {
-    let export_path = roots.path("export").ok_or("the project has no export root")?.to_path_buf();
+    let export_path = roots.path("export").to_path_buf();
     let (exports, staged) = list_versions(&export_path, inventory);
     let mut plan = ExportPlan { export_path: export_path.clone(), keep, errors: inventory.errors.clone(), ..ExportPlan::default() };
     let known: HashSet<Unit> = exports.iter().chain(staged.iter()).map(Version::parts).collect();

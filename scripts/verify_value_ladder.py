@@ -215,12 +215,13 @@ def main() -> int:
 
     # 7. the Entity Editor's own fields
     try:
-        from tumblepipe.asset_browser import entity_editor as ee
+        from tumblepipe.asset_browser import entity_editor_dialogs as eed
+        from tumblepipe.asset_browser import entity_editor_render as eer
     except ImportError as error:  # TumbleTrove's theme missing
         check('7 the Entity Editor imports (TumbleTrove python/ on PYTHONPATH?)', False, str(error))
     else:
-        frames = ee._spin(1001, -999_999)
-        field = ee._NumberField('int', ee._NoWheel())
+        frames = eed._spin(1001, -999_999)
+        field = eer._NumberField('int', eer._NoWheel())
         layout.addWidget(frames)
         layout.addWidget(field)
         field.show_value(8, False)
@@ -232,7 +233,7 @@ def main() -> int:
         commits.clear()
         drag(field.spin, [], modifiers=Qt.ControlModifier)
         check('7b Ctrl + middle-click on it takes the pin away (back to not set)',
-              commits == [ee._UNPIN], f'commits {commits}')
+              commits == [eer._UNPIN], f'commits {commits}')
         drag(frames, [(0.0, -maths.ROW), (notches(1), -maths.ROW)])
         check('7c a frame field: up a row and one notch adds 10', frames.value() == 1011, f'value {frames.value()}')
         drag(frames, [], modifiers=Qt.ControlModifier)
@@ -306,11 +307,11 @@ def main() -> int:
     except ImportError as error:
         check('11 the Prune window builds', False, str(error))
     try:
-        from tumblepipe.asset_browser import entity_editor as ee
+        from tumblepipe.asset_browser import entity_editor_render as eer
         extra = QWidget()
         extra_layout = QVBoxLayout(extra)
-        for field in (ee._NumberField('int', ee._NoWheel()), ee._NumberField('float', ee._NoWheel()),
-                      ee._ResolutionField(lambda: [], ee._NoWheel())):
+        for field in (eer._NumberField('int', eer._NoWheel()), eer._NumberField('float', eer._NoWheel()),
+                      eer._ResolutionField(lambda: [], eer._NoWheel())):
             extra_layout.addWidget(field)
         roots.append(extra)
     except (ImportError, TypeError) as error:

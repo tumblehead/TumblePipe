@@ -13,7 +13,7 @@ config = {
 from pathlib import Path
 
 from tumblepipe.api import path_str
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.farm.checks import checked
 from tumblepipe.farm.specs import build_pipeline as build_pipeline_spec
 from tumblepipe.farm.jobs import build as build_job

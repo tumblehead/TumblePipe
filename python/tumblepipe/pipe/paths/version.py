@@ -143,11 +143,21 @@ def get_latest_version_path(path: Path) -> Optional[Path]:
     return result
 
 def _find_latest_version_path(path: Path) -> Optional[Path]:
+    finished = latest_finished_version_path(path)
+    if finished is not None:
+        return finished
     version_paths = list_version_paths(path)
-    for version_path in reversed(version_paths):
+    return version_paths[-1] if version_paths else None
+
+def latest_finished_version_path(path: Path) -> Optional[Path]:
+    """The newest finished version folder under ``path``; None when no
+    version is finished. The strict rule, for readers that open the
+    version's ``context.json``; :func:`get_latest_version_path` falls back
+    to the newest folder when none is finished."""
+    for version_path in reversed(list_version_paths(path)):
         if is_finished_version(version_path):
             return version_path
-    return version_paths[-1] if version_paths else None
+    return None
 
 def get_next_version_path(path: Path) -> Path:
     """One past the highest version folder, finished or not, so a new

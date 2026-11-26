@@ -123,7 +123,7 @@ def _composite_frame(
 
             # Make the layer RGBA
             layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
-            exr._run(
+            exr.run_oiiotool(
                 rgba_command(
                     rgb_source_path, beauty_path, layer_rgba_path,
                     beauty_alpha_index
@@ -175,7 +175,7 @@ def _composite_frame(
                 '-o', path_str(output_frame_path)
             ])
 
-            exr._run(oiiotool_cmd, env=_get_ocio_env())
+            exr.run_oiiotool(oiiotool_cmd, env=_get_ocio_env())
 
     print(f'  Completed frame {frame_index}')
     return 0
@@ -187,30 +187,13 @@ def main(
     output_path
     ):
 
-    # Check that OCIO has been set
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
     # Print environment variables for debugging
     print_env()
 
-    # Receipt files
-    receipt_paths = [
-        frame_file(receipt_path, frame_index)
-        for frame_index in render_range
-    ]
-
-    # Find missing receipt files
-    missing_receipt_paths = [
-        output_frame_path
-        for output_frame_path in receipt_paths
-        if not output_frame_path.exists()
-    ]
-
     # Check if all receipts already exist
-    if len(missing_receipt_paths) == 0:
+    if not worker.missing_receipts(receipt_path, render_range):
         print('Output receipts already exist')
         return 0
 
@@ -222,9 +205,8 @@ def main(
             return result
 
     # Check if outputs were generated
-    for frame_index in render_range:
-        frame_path = frame_file(output_path, frame_index)
-        if frame_path.exists(): continue
+    output_frames = [frame_file(output_path, frame_index) for frame_index in render_range]
+    for frame_path in worker.unwritten(output_frames):
         return error(f'Output frame not found: {frame_path}')
 
     # Create output receipts

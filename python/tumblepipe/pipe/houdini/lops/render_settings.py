@@ -27,6 +27,7 @@ from tumblepipe.api import api
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.nodes import button
 
 class RenderSettings(ns.Node):
     def __init__(self, native):
@@ -70,11 +71,13 @@ class RenderSettings(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, RenderSettings, 'render_settings')
 
+@button('Render Settings')
 def load(kwargs):
     raw_node = kwargs['node']
     node = RenderSettings(raw_node)
     node.load()
 
+@button('Render Settings')
 def save(kwargs):
     raw_node = kwargs['node']
     node = RenderSettings(raw_node)
@@ -209,6 +212,7 @@ def old_aovs_note(node) -> list[str]:
     return ticked
 
 
+@button('Render Settings')
 def drop_old_aovs(kwargs) -> None:
     """Drop Old AOVs: every old AOV parm back to its default, so the
     embedded render_vars renders only the fallback beauty again."""

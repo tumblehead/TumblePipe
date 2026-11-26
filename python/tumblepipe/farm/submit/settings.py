@@ -68,6 +68,7 @@ from tumblepipe.farm.specs import repair
 from tumblepipe.farm.specs import submission
 from tumblepipe.pipe.usd.render_overrides import KARMA_SETTINGS
 from tumblepipe.pipe.usd.render_settings import valid_camera_override
+from tumblepipe.util.text import ordinal
 
 # Sentinel: this field has no fallback constant. When it resolves to
 # neither an exception, a pinned form value, nor an entity property, the
@@ -106,16 +107,13 @@ class Field:
         section: ``'publish'`` | ``'render'`` | ``'playblast'`` |
             ``'comp'``. The field is resolved only when its section is
             enabled.
-        label: Human label, used by the pre-flight table's header.
+        label: Human label, named in a bad value's error.
         prop: Dotted path into the entity's resolved properties, or
             ``None`` for a batch field (see the module docstring).
         default: Fallback when the entity carries no value. :data:`REQUIRED`
             means "omit the key instead of guessing".
         kind: The type every source must hold — ``'int'``,
             ``'bool'``, ``'str'`` or ``'list'``.
-        preflight: Show this field as a column in the pre-flight table.
-            Only the ones that meaningfully vary per entity are worth a
-            column; the rest are visible in the form.
         override: A farm-time override of a value the scene's own nodes
             author (samples, motion blur, DOF on th::render_settings). It
             has no entity source and no default: left unpinned it is not
@@ -140,7 +138,6 @@ class Field:
     prop: str | None = None
     default: Any = None
     kind: str = 'str'
-    preflight: bool = False
     override: bool = False
     derive: Callable[[dict], Any] | None = None
     attribute: str | None = None
@@ -173,8 +170,6 @@ def _resolution_axis(axis: int) -> Callable[[dict], Any]:
 # change is confined to entities that *differ* from the primary.
 FIELDS: tuple[Field, ...] = (
     # ── Publish ───────────────────────────────────────────
-    Field('pub_department', 'publish', 'Department',
-          prop='submission.publish.department', kind='str', preflight=True),
     Field('pub_pool', 'publish', 'Pool',
           prop='farm.default_pool', default='general', kind='str'),
     Field('pub_priority', 'publish', 'Priority',
@@ -182,10 +177,10 @@ FIELDS: tuple[Field, ...] = (
 
     # ── Render ────────────────────────────────────────────
     Field('render_department', 'render', 'Department',
-          prop='submission.render.department', kind='str', preflight=True),
+          prop='submission.render.department', kind='str'),
     # Batch fields: choices about the submission, not the entity.
     Field(CHANNEL_LIST_KEY, 'render', 'Channels',
-          prop=None, default=(DEFAULT_CHANNEL,), kind='list', preflight=True),
+          prop=None, default=(DEFAULT_CHANNEL,), kind='list'),
     Field('render_mode', 'render', 'Range', prop=None, default='full',
           kind='str'),
     Field('standalone', 'render', 'Standalone', prop=None, default=False,
@@ -216,17 +211,17 @@ FIELDS: tuple[Field, ...] = (
           default=repair.TARGET_NEW, kind='str'),
     # Entity fields. The four frame keys are REQUIRED: this is the fix.
     Field('first_frame', 'render', 'First', prop='frame_start',
-          default=REQUIRED, kind='int', preflight=True),
+          default=REQUIRED, kind='int'),
     Field('last_frame', 'render', 'Last', prop='frame_end',
-          default=REQUIRED, kind='int', preflight=True),
+          default=REQUIRED, kind='int'),
     Field('pre_roll', 'render', 'Pre-roll', prop='roll_start', default=0,
           kind='int'),
     Field('post_roll', 'render', 'Post-roll', prop='roll_end', default=0,
           kind='int'),
     Field('render_pool', 'render', 'Pool', prop='farm.default_pool',
-          default='general', kind='str', preflight=True),
+          default='general', kind='str'),
     Field('render_priority', 'render', 'Priority', prop='farm.priority',
-          default=50, kind='int', preflight=True),
+          default=50, kind='int'),
     Field('tile_count', 'render', 'Tiles', prop='farm.tile_count', default=4,
           kind='int'),
     Field('batch_size', 'render', 'Batch', prop='farm.batch_size', default=10,
@@ -253,7 +248,7 @@ FIELDS: tuple[Field, ...] = (
     # property. Its *frames* are not here at all: batch_submit derives them
     # per shot from config, which is the behaviour this module generalises.
     Field('pb_department', 'playblast', 'Department',
-          prop='submission.render.department', kind='str', preflight=True),
+          prop='submission.render.department', kind='str'),
     Field('pb_pool', 'playblast', 'Pool', prop='farm.default_pool',
           default='general', kind='str'),
     Field('pb_priority', 'playblast', 'Priority', prop='farm.priority',
@@ -443,6 +438,17 @@ def entity_value(
     return coerce(field.default, field)
 
 
+def row_value(field: Field, pinned: Any, properties: dict, fallbacks: dict | None = None) -> Any:
+    """One row's value for ``field``: the form's ``pinned`` value, else
+    (``pinned`` is :data:`MIXED`, the form pins none) the entity's own
+    (:func:`entity_value`); None when the entity has none and the field
+    no fallback."""
+    if pinned is not MIXED:
+        return pinned
+    value = entity_value(field, properties, fallbacks)
+    return None if value is REQUIRED else value
+
+
 def resolve_settings(
     properties: dict,
     *,
@@ -580,39 +586,6 @@ def seed_form(
         field.key: field_agreement(field, properties_list, fallbacks)
         for field in fields_for(sections)
     }
-
-
-# ── pre-flight ────────────────────────────────────────────
-
-
-def preflight_fields(sections: Sequence[str]) -> list[Field]:
-    """Columns worth showing in the pre-flight table."""
-    return [f for f in fields_for(sections) if f.preflight]
-
-
-def varying_fields(
-    properties_list: Sequence[dict],
-    *,
-    sections: Sequence[str],
-    pinned: Sequence[str] = (),
-    fallbacks: dict | None = None,
-) -> list[Field]:
-    """Pre-flight columns whose value actually differs across the batch.
-
-    A pinned field is the same for everyone by definition, so it is not a
-    column; showing only what varies is what makes the table readable
-    instead of a wall of repeats. Falls back to every pre-flight column when
-    a single entity is checked, so the table still says something.
-    """
-    pins = set(pinned)
-    columns = preflight_fields(sections)
-    if len(properties_list) < 2:
-        return columns
-    return [
-        field for field in columns
-        if field.key not in pins
-        and field_agreement(field, properties_list, fallbacks) is MIXED
-    ]
 
 
 def channel_list(data: dict) -> list:
@@ -758,6 +731,15 @@ def opened_channels(
 #: What a scene value no layer authors shows as: the renderer's own default.
 RENDERER_DEFAULT_TEXT = 'Karma default'
 
+# Shown by an unpinned widget whose checked entities disagree. The angle
+# brackets keep it from reading as a department or pool literally named
+# "per entity".
+PER_ENTITY_TEXT = "⟨per entity⟩"
+
+# Shown by an unpinned override field (samples, motion blur, DOF): nothing is
+# sent, so the render uses whatever the scene's render settings author.
+FROM_SCENE_TEXT = "⟨from scene⟩"
+
 
 def scene_value_text(value: Any, kind: str) -> str:
     """One scene value as the dialog shows it: ``on``/``off`` for a bool
@@ -869,9 +851,8 @@ def entity_warnings(
         )
 
     if resolved.get('publish'):
-        warnings.extend(
-            _department_warning(resolved.get('pub_department'), departments)
-        )
+        for name in resolved['pub_departments']:
+            warnings.extend(_department_warning(name, departments))
 
     if resolved.get('playblast'):
         warnings.extend(
@@ -892,7 +873,7 @@ def entity_warnings(
                 )
     warnings.extend(comp_step_warnings(resolved))
 
-    if into_version(resolved) == repair.TARGET_NEW:
+    if submission.into_version(resolved) == repair.TARGET_NEW:
         warnings.extend(frame_list_warnings(resolved))
     else:
         warnings.extend(repair_warnings(resolved))
@@ -915,12 +896,12 @@ def frame_list_note(text: str | None, step: int = 1) -> str:
     if step > 1:
         if not ranges:
             return (
-                f"Empty: every {nth(step)} frame, First → Last: "
-                f"{STEPPED_NOT_PUBLISHED}."
+                f"Empty: every {ordinal(step)} frame, First → Last: "
+                f"{frame_ranges.STEPPED_NOT_PUBLISHED}."
             )
         return (
-            f"{frame_ranges.summary(ranges, step)}, every {nth(step)} frame of "
-            f"each range: {STEPPED_NOT_PUBLISHED}"
+            f"{frame_ranges.summary(ranges, step)}, every {ordinal(step)} frame of "
+            f"each range: {frame_ranges.STEPPED_NOT_PUBLISHED}"
         )
     if not ranges:
         return f"Empty: every frame, First → Last. Several ranges: {frame_ranges.NOT_PUBLISHED}."
@@ -935,26 +916,10 @@ def frame_list_note(text: str | None, step: int = 1) -> str:
     )
 
 
-def into_version(resolved: dict) -> str:
-    """The row's Into version (#92): '' for new versions, ``latest`` or a
-    version name for a repair; '' when the render is off
-    (``farm.specs.submission.into_version``)."""
-    return submission.into_version(resolved)
-
-
-def repair_errors(resolved: dict) -> list[str]:
-    """Why the row's Into version cannot go with its other settings, read
-    without the disk: one of the refusals Farm Submit shares with the farm
-    (``farm.specs.submission.repair_problems``); a repair reaching for a
-    version that is not there is refused at the submit, which reads the
-    disk."""
-    return submission.repair_problems(resolved)
-
-
 def repair_warnings(resolved: dict) -> list[str]:
     """The Warnings-column line of a repair: which frames go into which
     version, and what runs again after them."""
-    target = into_version(resolved)
+    target = submission.into_version(resolved)
     ranges, error = submission.frame_list(resolved)
     if not repair.is_repair(target) or error is not None or not ranges:
         return []
@@ -1028,18 +993,8 @@ def frame_list_disabled(text: str | None, target: str | None = None) -> dict[str
     return {key: why for key in MULTI_RANGE_IGNORED}
 
 
-#: Why a stepped render publishes nothing (``batch_submit`` logs the same).
-STEPPED_NOT_PUBLISHED = frame_ranges.STEPPED_NOT_PUBLISHED
-
 #: The Render settings a stepped render ignores, as a multi-range one does.
 STEPPED_IGNORED = ('copy_to_edit',)
-
-
-def nth(step: int) -> str:
-    """``2nd``, ``3rd``, ``10th``, ``21st``: every Nth frame, in words."""
-    if step % 100 in (11, 12, 13):
-        return f"{step}th"
-    return f"{step}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(step % 10, 'th')}"
 
 
 def step_disabled(step: int | None) -> dict[str, str]:
@@ -1049,7 +1004,7 @@ def step_disabled(step: int | None) -> dict[str, str]:
     reason rather than dropped silently."""
     if not isinstance(step, int) or isinstance(step, bool) or step <= 1:
         return {}
-    why = f"Off while Step is {step}: {STEPPED_NOT_PUBLISHED}."
+    why = f"Off while Step is {step}: {frame_ranges.STEPPED_NOT_PUBLISHED}."
     return {key: why for key in STEPPED_IGNORED}
 
 
@@ -1075,10 +1030,10 @@ def step_warnings(resolved: dict) -> list[str]:
     if not resolved.get('render') or step <= 1:
         return []
     count = rendered_frames(resolved)
-    text = f"every {nth(step)} frame"
+    text = f"every {ordinal(step)} frame"
     if count is not None:
         text += f" ({count} frame{'s' if count != 1 else ''})"
-    text += f": {STEPPED_NOT_PUBLISHED}, no daily"
+    text += f": {frame_ranges.STEPPED_NOT_PUBLISHED}, no daily"
     if resolved.get('copy_to_edit'):
         text += ', Copy to edit skipped'
     return [text]

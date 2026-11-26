@@ -361,3 +361,13 @@ def projects_json_path() -> Path:
     if houdini_pref:
         return Path(houdini_pref) / "asset_browser" / "projects.json"
     return Path.home() / ".config" / "asset_browser" / "projects.json"
+
+
+def tag_value(tags, key: str) -> str:
+    """The value of a ``<key>:<value>`` tag in *tags* (a card's tags, a
+    view's scope), "" when there is none with a value."""
+    prefix = f"{key}:"
+    return next(
+        (t[len(prefix):] for t in tags if t.startswith(prefix) and len(t) > len(prefix)),
+        "",
+    )

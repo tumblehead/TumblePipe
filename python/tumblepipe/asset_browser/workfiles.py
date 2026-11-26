@@ -23,12 +23,14 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from tumblepipe.pipe.context import read_version_entry
 from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.util import desktop
 
 from .houdini import session_nc_type
 from tumblepipe.pipe.houdini.ui.report import report_failure, run_on_main_thread
 from .types import workfile_for_version
+from . import containers
 from . import uris as uris
 
 if TYPE_CHECKING:
@@ -251,9 +253,10 @@ class WorkfileManager:
         """
         if not asset_id or not dept:
             return None
-        if asset_id.startswith("group:"):
-            proj = self._group_project(asset_id)
-            uri = uris.group(self._split_group_id(asset_id)[1])
+        group = containers.group_of(asset_id)
+        if group is not None:
+            proj = self._registry.get(group.project_name)
+            uri = group.uri
         else:
             proj = self._resolver.project_for(asset_id)
             uri = None
@@ -266,21 +269,6 @@ class WorkfileManager:
         _workfile_uri, workspace = department_workspace(uri, dept)
         return workspace
 
-    @staticmethod
-    def _split_group_id(asset_id: str) -> tuple[str, str]:
-        """``group:PROJECT:ctx/name`` → ``(PROJECT, ctx/name)``.
-
-        Group ids are minted by the catalog itself, so one that does not
-        split is a bug and raises.
-        """
-        _, proj_name, path = asset_id.split(":", 2)
-        return proj_name, path
-
-    def _group_project(self, asset_id: str):
-        """The registry project of a ``group:PROJECT:ctx/name`` id, or ``None``."""
-        proj_name, _path = self._split_group_id(asset_id)
-        return self._registry.get(proj_name)
-
     def workfile_path_for(
         self, asset_id: str, dept: str, version: str,
     ) -> Path | None:
@@ -292,33 +280,13 @@ class WorkfileManager:
             return None
         return workfile_for_version(dept_dir, version)
 
-    @staticmethod
-    def _read_version_sidecar(dept_dir: Path | None, version: str) -> dict:
-        """Return ``{dept_dir}/_context/{version}.json``, or ``{}``.
-
-        Takes a resolved *dept_dir* rather than an asset id so a caller
-        wanting several fields resolves the directory once. Read
-        directly rather than through ``ui.helpers``, which would
-        re-resolve the path via the cached single-project
-        ``tumblehead.pipe.paths`` functions and miss cross-project
-        switches. A version saved before sidecars existed has none
-        (``{}``); one that will not parse raises.
-        """
-        if dept_dir is None or not version:
-            return {}
-        ctx_file = dept_dir / "_context" / f"{version}.json"
-        if not ctx_file.exists():
-            return {}
-        import json
-        return json.loads(ctx_file.read_text(encoding="utf-8"))
-
     def get_user_for_version(self, asset_id: str, dept: str, version: str):
         """Read the user attribution for a specific dept/version."""
-        sidecar = self._read_version_sidecar(
-            self.dept_dir_for(asset_id, dept), version,
-        )
-        user = sidecar.get("user")
-        return str(user) if user else None
+        dept_dir = self.dept_dir_for(asset_id, dept)
+        if dept_dir is None or not version:
+            return None
+        user, _note = read_version_entry(dept_dir, version)
+        return user or None
 
     def get_mtime_for_version(self, asset_id: str, dept: str, version: str):
         """Return the .hip file's modification time as a datetime, or None.
@@ -355,15 +323,10 @@ class WorkfileManager:
         stat-storm this module has already been through once. Both fields
         live in one file, so reading them together costs nothing extra.
         """
-        sidecar = self._read_version_sidecar(
-            self.dept_dir_for(asset_id, dept), version,
-        )
-        user = sidecar.get("user")
-        note = sidecar.get("note")
-        return (
-            (str(user) if user else ""),
-            (str(note) if note else ""),
-        )
+        dept_dir = self.dept_dir_for(asset_id, dept)
+        if dept_dir is None or not version:
+            return "", ""
+        return read_version_entry(dept_dir, version)
 
     def get_notes_for_versions(
         self, asset_id: str, dept: str, versions: list[str],
@@ -383,16 +346,14 @@ class WorkfileManager:
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=min(8, len(versions))) as pool:
-            sidecars = pool.map(
-                lambda v: self._read_version_sidecar(dept_dir, v), versions,
+            entries = pool.map(
+                lambda v: read_version_entry(dept_dir, v), versions,
             )
-            result = {}
-            for version, sidecar in zip(versions, sidecars):
-                note = sidecar.get("note")
-                if note:
-                    user = sidecar.get("user")
-                    result[version] = (str(user) if user else "", str(note))
-        return result
+            return {
+                version: (user, note)
+                for version, (user, note) in zip(versions, entries)
+                if note
+            }
 
     def get_dept_row_meta(
         self, asset_id: str, dept: str, version: str,
@@ -419,9 +380,7 @@ class WorkfileManager:
         if dept_dir is None or not version:
             return "", 0.0, ""
 
-        sidecar = self._read_version_sidecar(dept_dir, version)
-        user = sidecar.get("user")
-        note = sidecar.get("note")
+        user, note = read_version_entry(dept_dir, version)
 
         path = workfile_for_version(dept_dir, version)
 
@@ -433,11 +392,7 @@ class WorkfileManager:
                 # Deleted between the glob that found it and this stat.
                 mtime = 0.0
 
-        return (
-            (str(user) if user else ""),
-            mtime,
-            (str(note) if note else ""),
-        )
+        return user, mtime, note
 
     def exports_usd(self, asset_id: str, dept: str) -> bool:
         """Whether ``dept``'s exports of ``asset_id`` are USD layers (see
@@ -626,9 +581,10 @@ class WorkfileManager:
         if not asset_id or not version:
             return
         import hou
-        is_group = asset_id.startswith("group:")
+        group = containers.group_of(asset_id)
+        is_group = group is not None
         if is_group:
-            proj = self._group_project(asset_id)
+            proj = self._registry.get(group.project_name)
         else:
             proj = self._resolver.project_for(asset_id)
         if proj is None:
@@ -830,7 +786,7 @@ class WorkfileManager:
         the department template (see :meth:`_create_from_template`)."""
         if not asset_id:
             return
-        if asset_id.startswith("group:"):
+        if containers.group_of(asset_id) is not None:
             self.new_group_from_template(asset_id, dept, refresh_cb)
             return
         proj = self._resolver.project_for(asset_id)
@@ -879,15 +835,16 @@ class WorkfileManager:
         """
         if not asset_id:
             return
-        if asset_id.startswith("group:"):
-            proj = self._group_project(asset_id)
+        group = containers.group_of(asset_id)
+        if group is not None:
+            proj = self._registry.get(group.project_name)
             if proj is None:
                 return
             self._activator.activate(proj)
             # A write path: never save into a Multi groups.json no longer
             # holds.
             from tumblepipe.config import groups as grp_mod
-            entity_uri = uris.group(self._split_group_id(asset_id)[1])
+            entity_uri = group.uri
             if grp_mod.get_group_in(proj.store(), entity_uri) is None:
                 raise ValueError(f"No Multi {entity_uri} in this project")
             # Only a Multi's scene forks into a Multi: a shot's or asset's
@@ -1009,16 +966,16 @@ class WorkfileManager:
         """
         if not asset_id:
             return
-        is_group = asset_id.startswith("group:")
-        if is_group:
-            proj = self._group_project(asset_id)
+        group = containers.group_of(asset_id)
+        if group is not None:
+            proj = self._registry.get(group.project_name)
         else:
             proj = self._resolver.project_for(asset_id)
         if proj is None:
             return
         self._activator.activate(proj)
         entity_uri = (
-            uris.group(self._split_group_id(asset_id)[1]) if is_group
+            group.uri if group is not None
             else self._resolver.uri_for_ready(asset_id)
         )
         from tumblepipe.pipe.houdini.workfiles import (
@@ -1074,12 +1031,13 @@ class WorkfileManager:
         group-aware path resolver. If no workfile exists, one is made
         from the template.
         """
-        if not asset_id.startswith("group:"):
+        group = containers.group_of(asset_id)
+        if group is None:
             return
-        proj = self._group_project(asset_id)
+        proj = self._registry.get(group.project_name)
         if proj is None:
             return
-        _proj_name, path = self._split_group_id(asset_id)
+        path = group.path
         self._activator.activate(proj)
         from tumblepipe.pipe import paths as paths_mod
         hip_path = paths_mod.latest_hip_file_path_with_context(
@@ -1093,14 +1051,14 @@ class WorkfileManager:
     @_action("Opening the group work directory")
     def open_group_dept_work_dir(self, asset_id: str, dept: str) -> None:
         """Open a group dept's workfile directory in Explorer."""
-        if not asset_id.startswith("group:"):
+        group = containers.group_of(asset_id)
+        if group is None:
             return
-        proj = self._group_project(asset_id)
+        proj = self._registry.get(group.project_name)
         if proj is None:
             return
-        _proj_name, path = self._split_group_id(asset_id)
         self._activator.activate(proj)
-        self._open_group_folder(path, dept)
+        self._open_group_folder(group.path, dept)
 
     @staticmethod
     def _open_group_folder(path: str, dept: str) -> None:
@@ -1125,12 +1083,13 @@ class WorkfileManager:
         (the Entity Editor's Multis tab waits for it)."""
         handed_on = False
         try:
-            if not asset_id.startswith("group:"):
+            group = containers.group_of(asset_id)
+            if group is None:
                 return
-            proj = self._group_project(asset_id)
+            proj = self._registry.get(group.project_name)
             if proj is None:
                 return
-            proj_name, path = self._split_group_id(asset_id)
+            proj_name, path = group.project_name, group.path
             self._activator.activate(proj)
             client = self._clients.get(proj_name)
             group_uri = uris.group(path)

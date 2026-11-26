@@ -20,7 +20,7 @@ whatever its own `visibility` says (`UsdGeomImageable.ComputeVisibility`),
 and a prim under a visible one is what its own says. So outside the Frames
 everything under the character is hidden, and inside them each geometry
 prim is exactly as `apply` animates it without Frames (the rig's
-`usdvisibility`, `animate_points.author_visibility`). Every frame, for the
+`usdvisibility`, `animate_visibility.author_visibility`). Every frame, for the
 reason `author_visibility` samples every frame: a prim sampled only where it
 is hidden reads as hidden on every frame of a saved range.
 
@@ -167,7 +167,7 @@ def character_prims(scene_geo) -> dict:
     if scene_geo is None or scene_geo.findPrimAttrib('name') is None:
         return found
     for folder in scene_geo.prims():
-        name = animate_invoke._name(folder)
+        name = animate_invoke.prim_name(folder)
         if not name.endswith(animate_invoke.SCENE_SUFFIX):
             continue
         getter = getattr(folder, 'getEmbeddedGeometry', None)
@@ -195,7 +195,7 @@ def _dive_prims(sops):
 def author_visibility(layer, paths, shown, bases, frame) -> None:
     """A `visibility` sample at `frame` on each character prim at `paths`
     (Sdf paths) in `layer`: `invisible` where `shown` (one bool per path)
-    is False; else `bases` (`animate_points.visibility_bases`: what the prim
+    is False; else `bases` (`animate_visibility.visibility_bases`: what the prim
     has without th::animate), unless the prim already has a sample at
     `frame` (a geometry prim at the character's path, which `apply` samples
     itself), which is left as it is."""
@@ -219,7 +219,7 @@ def hide(layer, prims, character_limits, incoming, frame) -> list:
     th::animate; None without one). Returns the characters with no prim."""
     from pxr import Sdf
 
-    from tumblepipe.pipe.houdini.lops import animate_points
+    from tumblepipe.pipe.houdini.lops import animate_visibility
     shown, missing = {}, []
     for character, ranges in character_limits.items():
         path = prims.get(character)
@@ -230,7 +230,7 @@ def hide(layer, prims, character_limits, incoming, frame) -> list:
         shown[path] = shown.get(path, False) or frame_in(ranges, frame)
     if shown:
         paths = [Sdf.Path(path) for path in shown]
-        bases = animate_points.visibility_bases(incoming, layer, paths, frame)
+        bases = animate_visibility.visibility_bases(incoming, layer, paths, frame)
         author_visibility(layer, paths, list(shown.values()), bases, frame)
     return sorted(missing)
 
@@ -242,7 +242,7 @@ def apply(lop_node, layer, frame) -> None:
     change on the status bar). Nothing for a node with no Frames set and no
     Segments rows."""
     from tumblepipe.pipe.houdini.lops import animate_points, animate_segments
-    animate = animate_points._animate_node(lop_node)
+    animate = animate_points.parent_animate(lop_node)
     if animate is None:
         return
     character_limits, problems = limits(rows(animate))
@@ -250,7 +250,7 @@ def apply(lop_node, layer, frame) -> None:
     if character_limits:
         sops = animate.node(animate_points.POINTS_SOPS)
         missing = hide(layer, _dive_prims(sops), character_limits,
-                       animate_points._incoming_stage(lop_node), frame)
+                       animate_points.incoming_stage(lop_node), frame)
         if missing:
             messages.append(missing_message(missing))
     messages += animate_segments.problems(animate)

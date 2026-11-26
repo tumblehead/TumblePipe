@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.farm.submit.settings import RENDER_OVERRIDES
 
 # RenderSettings prims sit near the root (/Render/rendersettings,
@@ -91,7 +92,8 @@ def plan_probe(entity_uri, channel: str, department: str) -> CameraProbe:
     from tumblepipe import naming
     from tumblepipe.util.uri import Uri
     from tumblepipe.pipe.paths import get_export_path
-    from tumblepipe.farm.pipelines.preview import department_cut, entity_context
+    from tumblepipe.config.department import entity_context
+    from tumblepipe.farm.pipelines.preview import department_cut
 
     cut, _pool = department_cut(entity_context(entity_uri), department)
     export_dirs = tuple(
@@ -373,6 +375,91 @@ def camera_note(override, found: RenderCamera | None, configured: str | None) ->
     if configured and camera != configured:
         return f"{source}'s export names {camera}; the shot's camera setting is {configured}"
     return None
+
+
+@dataclass(frozen=True)
+class Shot:
+    """One rendering shot as the Camera field reads it: its ``name``, the
+    ``channel`` its camera is read from, its ``configured`` camera
+    (:func:`configured_camera`) and its lookup (``found``, None while it
+    is being read)."""
+    name: str
+    channel: str
+    configured: str | None
+    found: RenderCamera | None
+
+
+@dataclass(frozen=True)
+class CameraSummary:
+    """What the Camera field shows for the rendering shots.
+
+    ``options`` its menu; ``placeholder`` what the empty field says;
+    ``read`` whether every shot's lookup is in (until then ``lines`` and
+    ``notes`` are empty); ``lines`` one per shot for the tooltip; ``notes``
+    the lines worth a second look (:func:`camera_note`), named by shot when
+    there are several.
+    """
+    options: list[str]
+    placeholder: str
+    read: bool
+    lines: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+
+def summary(shots, override) -> CameraSummary:
+    """The Camera field over ``shots`` (:class:`Shot`, in row order) with
+    the form's ``override`` (None when unpinned): the scene's camera when
+    they agree, ``varies`` when not, ``Reading…`` while a lookup is out."""
+    read = bool(shots) and all(s.found is not None for s in shots)
+    options = camera_options(
+        [s.configured for s in shots if s.configured],
+        [s.found for s in shots] if read else [],
+    )
+    if not read:
+        return CameraSummary(options, "Reading…" if shots else resolve.FROM_SCENE_TEXT, False)
+    lines, notes, scene = [], [], set()
+    for shot in shots:
+        found = shot.found
+        if found.error:
+            lines.append(f"{shot.name}: not read  {found.error}")
+            continue
+        camera, source = effective_camera(None, found, shot.configured)
+        scene.add(camera)
+        lines.append(
+            f"{shot.name}: {camera}  ({source}, {shot.channel})" if camera
+            else f"{shot.name}: none named"
+        )
+        note = camera_note(override, found, shot.configured)
+        if note:
+            notes.append(note if len(shots) == 1 else f"{shot.name}: {note}")
+    if len(scene) == 1 and None not in scene:
+        placeholder = f"from scene: {next(iter(scene))}"
+    elif scene and scene != {None}:
+        placeholder = f"varies: {resolve.PER_ENTITY_TEXT}"
+    else:
+        placeholder = "from scene: none named"
+    return CameraSummary(options, placeholder, True, tuple(lines), tuple(notes))
+
+
+def scene_values(key: str, shots) -> tuple[str | None, tuple[str, ...]]:
+    """``(placeholder, lines)`` of override field ``key`` (Samples, Motion
+    blur, DOF) over the shots' lookups, once every one is read
+    (:attr:`CameraSummary.read`; pass none before): the scene's values
+    (``settings.scene_placeholder``, None with none read) and a line per
+    shot naming its value and where it is authored. A shot whose lookup
+    failed is named, and left out of the placeholder."""
+    kind = resolve.FIELDS_BY_KEY[key].kind
+    values, lines = [], []
+    for shot in shots:
+        found = shot.found
+        if found.error:
+            lines.append(f"{shot.name}: not read  {found.error}")
+            continue
+        value, source = found.settings.get(key, (None, ''))
+        values.append(value)
+        shown = resolve.scene_value_text(value, kind)
+        lines.append(f"{shot.name}: {shown}  ({source})" if source else f"{shot.name}: {shown}")
+    return resolve.scene_placeholder(values, kind), tuple(lines)
 
 
 def camera_options(configured, found_list) -> list[str]:

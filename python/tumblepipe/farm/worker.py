@@ -16,18 +16,46 @@ Import-light: no Deadline, no ``tomli_w``, no ``hou``.
 """
 
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 import argparse
 import logging
+import os
 import time
 
 from tumblepipe.config.timeline import BlockRange
+from tumblepipe.farm.frames import frame_file
 from tumblepipe.util.io import load_json
 from tumblepipe.util.logging import setup_logging
 
 
 class WorkerConfigError(ValueError):
     """A worker's config does not match its schema."""
+
+
+class WorkerEnvError(RuntimeError):
+    """The worker's environment lacks a variable it needs."""
+
+
+def require_env(name: str) -> str:
+    """The environment variable ``name``; raises :class:`WorkerEnvError` when unset."""
+    value = os.environ.get(name)
+    if value is None:
+        raise WorkerEnvError(f'{name} environment variable not set')
+    return value
+
+
+def missing_receipts(receipt_path: Path, frames: Iterable[int], overwrite: bool = False) -> list[Path]:
+    """The receipts of ``frames`` the task still has to make, in frame order:
+    those not on disk, or all of them with ``overwrite`` (a render or
+    denoise into a version, #92, redoes frames whose receipts exist: a
+    frame being repaired has one)."""
+    receipts = [frame_file(receipt_path, frame) for frame in frames]
+    return receipts if overwrite else unwritten(receipts)
+
+
+def unwritten(paths: Iterable[Path]) -> list[Path]:
+    """The ones of ``paths`` not on disk: what a task's work failed to write."""
+    return [path for path in paths if not path.exists()]
 
 
 def error(msg: str) -> int:

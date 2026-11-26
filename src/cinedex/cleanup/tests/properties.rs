@@ -11,7 +11,7 @@ use std::time::Duration;
 use chrono::{Local, TimeZone};
 use proptest::prelude::*;
 use th_cleanup::core::{CategoryPlan, Entry, Farm, Plan, Progress, Settings, Watch};
-use th_cleanup::roots::ProjectRoots;
+use th_cleanup::roots::{ProjectRoots, WALKED_PURPOSES};
 use th_cleanup::{backups, core, deleted, fsx, jobs, overview, py};
 
 fn stem() -> impl Strategy<Value = String> {
@@ -462,8 +462,49 @@ fn paused_purges_hold_then_resume() {
     assert!(names.iter().all(|n| !holder.join(n).exists()), "all gone once resumed");
 }
 
+proptest! {
+    /// Every purpose has a root, even one `storage.json` puts on another's
+    /// folder (`export` on the project folder, two on one shared folder),
+    /// and each folder is walked once (Python's `roots_keep_every_purpose`).
+    #[test]
+    fn roots_keep_every_purpose(shared in proptest::collection::btree_map(0usize..WALKED_PURPOSES.len(), any::<bool>(), 1..5)) {
+        let home = tempfile::tempdir().expect("a folder");
+        let project = home.path().join("Proj");
+        let config = project.join("_config");
+        std::fs::create_dir_all(&config).expect("config");
+        let mut table: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_slice(include_bytes!("../../../../scripts/project_template/_config/storage.json")).expect("the template");
+        for (index, on_project) in &shared {
+            let target = if *on_project { "{project_path}" } else { "{project_parent}/{project_name}_shared" };
+            table.insert(WALKED_PURPOSES[*index].into(), target.into());
+        }
+        std::fs::write(config.join("storage.json"), serde_json::to_vec(&table).expect("json")).expect("storage");
+        std::fs::write(config.join("version.json"), br#"{"version": 22}"#).expect("version");
+        let roots = ProjectRoots::open(&project).expect("roots");
+        let project = fsx::resolve(&project);
+        let expected = |purpose: &str| {
+            let text = table[purpose].as_str().expect("a path")
+                .replace("{project_path}", &project.to_string_lossy())
+                .replace("{project_parent}", &project.parent().expect("a parent").to_string_lossy())
+                .replace("{project_name}", "Proj");
+            fsx::resolve(Path::new(&text))
+        };
+        for purpose in WALKED_PURPOSES {
+            prop_assert!(fsx::same_path(roots.path(purpose), &expected(purpose)), "{purpose}: {:?}", roots.path(purpose));
+        }
+        prop_assert!(fsx::same_path(roots.path("project"), &project));
+        let walked: Vec<&Path> = roots.roots.iter().map(|r| r.path.as_path()).collect();
+        for (index, path) in walked.iter().enumerate() {
+            prop_assert!(!walked[..index].iter().any(|other| fsx::same_path(other, path)), "walked twice: {path:?}");
+        }
+        let mut wanted = vec![project.clone(), fsx::resolve(&config)];
+        wanted.extend(WALKED_PURPOSES.iter().map(|p| expected(p)));
+        prop_assert!(wanted.iter().all(|w| walked.iter().any(|p| fsx::same_path(p, w))));
+    }
+}
+
 fn empty_roots() -> ProjectRoots {
-    ProjectRoots { project_path: Path::new("").into(), config_path: Path::new("").into(), roots: Vec::new() }
+    ProjectRoots { project_path: Path::new("").into(), config_path: Path::new("").into(), roots: Vec::new(), purposes: Vec::new() }
 }
 
 /// A progress step: its category and what it is doing.

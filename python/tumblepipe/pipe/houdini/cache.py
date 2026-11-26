@@ -36,6 +36,7 @@ from tumblepipe.pipe.paths import (
     list_version_paths,
     get_workspace_relpath,
 )
+from tumblepipe.pipe.houdini.nodes import button
 
 
 class Location:
@@ -71,11 +72,7 @@ class CacheBase(FrameRangeNode, EntityNode):
     # workfile.
 
     def list_department_names(self):
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return ['from_context']
-        names = [d.name for d in self.scoped_departments(entity_uri.segments[0])]
-        return ['from_context'] + names
+        return self.department_choices()
 
     # Cache path --------------------------------------------------------------
 
@@ -383,9 +380,10 @@ class CacheBase(FrameRangeNode, EntityNode):
         locations, for the browse dialog: an artist loading another
         department's cache should not have to know which one wrote it."""
         entity_uri = self.get_entity_uri()
-        if entity_uri is None: return []
+        context = self.department_context()
+        if context is None: return []
         roots = []
-        for department in self.scoped_departments(entity_uri.segments[0]):
+        for department in self.scoped_departments(context):
             base_path = get_workspace_relpath(entity_uri, department.name)
             for location_name in (Location.Project, Location.Proxy):
                 roots.append((
@@ -610,6 +608,7 @@ def on_created(raw_node):
     wrap(raw_node)._update_labels()
 
 
+@button('Cache')
 def select(kwargs):
     """Entity picker button callback."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
@@ -632,11 +631,13 @@ def select(kwargs):
             node.follow_selection()
 
 
+@button('Cache')
 def selection_changed(kwargs):
     """Department / Location / Name callback."""
     wrap(kwargs['node']).follow_selection()
 
 
+@button('Cache')
 def browse(kwargs):
     """The browse button next to Name: pick any cache of the entity."""
     from tumblepipe.pipe.houdini.ui.cache_browser import CacheBrowserDialog
@@ -669,20 +670,23 @@ def browse(kwargs):
             node.pick_cache(listing)
 
 
+@button('Cache')
 def latest(kwargs):
     wrap(kwargs['node']).latest()
 
 
+@button('Cache')
 def cache(kwargs):
     wrap(kwargs['node']).cache()
 
 
+@button('Cache')
 def load(kwargs):
     wrap(kwargs['node']).load()
 
 
+@button('Open Location')
 def open_location(kwargs):
     """Open Location: the picked version's folder in the OS file browser;
     a folder that is not there yet is said in a message, not a traceback."""
-    with ns.node_errors_as_message('Open Location'):
-        wrap(kwargs['node']).open_location()
+    wrap(kwargs['node']).open_location()

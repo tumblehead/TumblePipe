@@ -18,7 +18,8 @@ host hook to it. The work lives in the companion modules:
 
 Recipe (``recipe:``), texture set (``texture:``), edit (``edit:``), node
 (``node:``) and container (``group:`` / ``scene:``) ids are routed before
-anything entity-shaped sees them.
+anything entity-shaped sees them: every hook matches on the one
+``card_refs.card_ref`` of its id.
 """
 
 from __future__ import annotations
@@ -71,6 +72,8 @@ from .entity_ops import EntityOps, creation_scope
 from .hover import AssetHover
 from .houdini import ProjectActivator
 from .libraries import LibraryIndex, is_library_owner
+from .card_refs import CardRef, EntityCard, LibraryCard, NodeCard, card_ref
+from .containers import GroupContainer, SceneContainer
 from .library_kinds import LibraryKinds
 from .menus import PipelineMenus, reporting_menu
 from .nodes import PipelineNodes
@@ -165,12 +168,19 @@ class PipelineCatalog(Catalog):
         Lets the browser scope the Favourites view to the launch project
         — favourites are stored under this one catalog id across every
         project, so without this a star set in one project would surface
-        in another. Pure string split (no client build)."""
-        kind = self._kinds.for_id(asset_id)
-        owner = kind.project_of(asset_id) if kind is not None else None
-        if owner is not None and not is_library_owner(owner):
-            return owner
-        if owner is not None or nodes.is_node_id(asset_id):
+        in another. Pure string split (no client build). A mangled id
+        (a stale stored favourite) is no project's: None hides it, where
+        the MalformedCardId every other hook raises would have the browser
+        log it on each refresh and show it in every project."""
+        try:
+            ref = self._card(asset_id)
+        except uris.MalformedCardId:
+            return None
+        if isinstance(ref, LibraryCard):
+            owner = ref.kind.project_of(asset_id)
+            if owner is not None and not is_library_owner(owner):
+                return owner
+        if isinstance(ref, (LibraryCard, NodeCard)):
             # A package node belongs to every project, and a library card
             # to every project listing its library. The browser keeps a
             # favourite only when this equals the scoped (launch) project,
@@ -178,6 +188,10 @@ class PipelineCatalog(Catalog):
             return self._activator.launch_project_name or None
         parts = self._resolver.split(asset_id)
         return parts[0] if parts else None
+
+    def _card(self, asset_id: str) -> CardRef:
+        """What *asset_id* names (``card_refs``): every hook routes on this."""
+        return card_ref(asset_id, self._kinds)
 
     # ── Lifecycle ─────────────────────────────────────────
 
@@ -538,14 +552,15 @@ class PipelineCatalog(Catalog):
 
     def get_asset(self, asset_id: str):
         """A fresh card for one id (a save, a create, an edit), or None."""
-        if containers.parse(asset_id) is not None:
-            return self._containers.card(asset_id)
-        kind = self._kinds.for_id(asset_id)
-        if kind is not None:
-            return kind.get_asset(asset_id)
-        if nodes.is_node_id(asset_id):
-            return self._nodes.get_asset(asset_id)
-        return self._index.card(asset_id)
+        match self._card(asset_id):
+            case GroupContainer() | SceneContainer():
+                return self._containers.card(asset_id)
+            case LibraryCard(kind=kind):
+                return kind.get_asset(asset_id)
+            case NodeCard():
+                return self._nodes.get_asset(asset_id)
+            case EntityCard():
+                return self._index.card(asset_id)
 
     # ── Detail ────────────────────────────────────────────
 
@@ -554,14 +569,15 @@ class PipelineCatalog(Catalog):
         # sequence of the shot it shows (the catalog is told of no other
         # selection).
         self._selected_asset_id = asset_id
-        if containers.parse(asset_id) is not None:
-            return self._containers.detail(asset_id)
-        kind = self._kinds.for_id(asset_id)
-        if kind is not None:
-            return kind.get_detail(asset_id)
-        if nodes.is_node_id(asset_id):
-            return self._nodes.get_detail(asset_id, version)
-        return self._index.detail(asset_id, self._ops.read_description(asset_id))
+        match self._card(asset_id):
+            case GroupContainer() | SceneContainer():
+                return self._containers.detail(asset_id)
+            case LibraryCard(kind=kind):
+                return kind.get_detail(asset_id)
+            case NodeCard():
+                return self._nodes.get_detail(asset_id, version)
+            case EntityCard():
+                return self._index.detail(asset_id, self._ops.read_description(asset_id))
 
     def get_detail_sections(
         self, detail: AssetDetail,
@@ -638,16 +654,17 @@ class PipelineCatalog(Catalog):
         return path if path is not None and path.exists() else None
 
     def get_thumbnail(self, asset: Asset):
-        kind = self._kinds.for_id(asset.id)
-        if kind is not None:
-            return kind.get_thumbnail(asset)
-        if nodes.is_node_id(asset.id):
-            return self._nodes.get_thumbnail(asset)
-        return self._thumbnails.get_thumbnail(asset)
+        match self._card(asset.id):
+            case LibraryCard(kind=kind):
+                return kind.get_thumbnail(asset)
+            case NodeCard():
+                return self._nodes.get_thumbnail(asset)
+            case GroupContainer() | SceneContainer() | EntityCard():
+                return self._thumbnails.get_thumbnail(asset)
 
     def _not_an_entity(self, asset_id: str) -> bool:
         """A library card or a node card: no entity behind it."""
-        return self._kinds.owns(asset_id) or nodes.is_node_id(asset_id)
+        return isinstance(self._card(asset_id), (LibraryCard, NodeCard))
 
     def get_asset_hover_widget(self, asset):
         if self._not_an_entity(asset.id):
@@ -665,25 +682,27 @@ class PipelineCatalog(Catalog):
         ``thumbnail.png`` live); a recipe's, texture set's or edit's own
         folder (its library kind's ``asset_folder``). Nodes and Multis have
         none (a Multi's container menu has its own Open Folder)."""
-        kind = self._kinds.for_id(asset.id)
-        if kind is not None:
-            return kind.asset_folder(asset)
-        if nodes.is_node_id(asset.id) or asset.id.startswith("group:"):
-            return None
-        # A raise is logged by the browser, which then leaves the entry out.
-        return self._resolver.entity_dir(asset.id)
+        match self._card(asset.id):
+            case LibraryCard(kind=kind):
+                return kind.asset_folder(asset)
+            case NodeCard() | GroupContainer():
+                return None
+            case SceneContainer() | EntityCard():
+                # A raise is logged by the browser, which then leaves the
+                # entry out.
+                return self._resolver.entity_dir(asset.id)
 
     def get_card_menu_items(self, asset: Asset, *, selected_assets=None):
         """Card right-click items. ``selected_assets`` is the browser's
         multi-selection when every selected card is ours: Submit Jobs…
         then covers the selection's cards of the clicked card's context."""
-        kind = self._kinds.for_id(asset.id)
-        if kind is not None:
-            items = kind.card_menu_items(asset)
-        elif nodes.is_node_id(asset.id):
-            items = self._nodes.card_menu_items(asset)
-        else:
-            items = self._menus.card_items(asset, selected_assets=selected_assets)
+        match self._card(asset.id):
+            case LibraryCard(kind=kind):
+                items = kind.card_menu_items(asset)
+            case NodeCard():
+                items = self._nodes.card_menu_items(asset)
+            case GroupContainer() | SceneContainer() | EntityCard():
+                items = self._menus.card_items(asset, selected_assets=selected_assets)
         return reporting_menu(items)
 
     def get_deck_item_menu_items(self, asset: Asset, deck_item_key: str):
@@ -717,7 +736,7 @@ class PipelineCatalog(Catalog):
         self._refresh.detail()
 
     def _is_multi(self, collection_id: str) -> bool:
-        return isinstance(containers.parse(collection_id), containers.GroupContainer)
+        return containers.group_of(collection_id) is not None
 
     # ── Deck items (departments) ──────────────────────────
 
@@ -794,11 +813,11 @@ class PipelineCatalog(Catalog):
 
     def get_ghost_data(self, asset):
         from tumbletrove.asset_browser.core.ghost_overlay import GhostData, GhostNode
-        kind = self._kinds.for_id(asset.id)
-        if kind is not None:
-            return kind.ghost_data(asset)
-        if nodes.is_node_id(asset.id):
-            return self._nodes.get_ghost_data(asset.id)
+        match self._card(asset.id):
+            case LibraryCard(kind=kind):
+                return kind.ghost_data(asset)
+            case NodeCard():
+                return self._nodes.get_ghost_data(asset.id)
         if "type:shot" in asset.tags:
             return GhostData(nodes=[GhostNode("th::import_shot::1.0", 0.0, 0.0)])
         return GhostData(nodes=[GhostNode("th::import_asset::1.0", 0.0, 0.0)])
@@ -845,12 +864,13 @@ class PipelineCatalog(Catalog):
         return textures.texture_destinations()
 
     def on_drop(self, detail, drop) -> bool:
-        kind = self._kinds.for_id(detail.id)
-        if kind is not None:
-            return kind.on_drop(detail, drop)
-        if nodes.is_node_id(detail.id):
-            return self._nodes.on_drop(detail, drop)
-        return self._drops.on_drop(detail, drop)
+        match self._card(detail.id):
+            case LibraryCard(kind=kind):
+                return kind.on_drop(detail, drop)
+            case NodeCard():
+                return self._nodes.on_drop(detail, drop)
+            case GroupContainer() | SceneContainer() | EntityCard():
+                return self._drops.on_drop(detail, drop)
 
     def on_deck_drop(self, asset, deck_keys, drop) -> bool:
         return self._drops.on_deck_drop(asset, deck_keys, drop)
@@ -859,12 +879,13 @@ class PipelineCatalog(Catalog):
         # A selection holding a library card (a recipe, a texture set)
         # falls back to one on_drop per card: the router bundles assets
         # into an import_assets node and would silently leave it behind.
-        if any(self._kinds.owns(a.id) for a in assets):
+        refs = [self._card(a.id) for a in assets]
+        if any(isinstance(ref, LibraryCard) for ref in refs):
             return False
         # Node cards create one node each. Mixed with entities the nodes
         # decline, and each card falls back to its own on_drop, for the
         # same reason as recipes.
-        if any(nodes.is_node_id(a.id) for a in assets):
+        if any(isinstance(ref, NodeCard) for ref in refs):
             return self._nodes.on_multi_drop(assets, drop)
         return self._drops.on_multi_drop(assets, drop)
 
@@ -970,41 +991,43 @@ class PipelineCatalog(Catalog):
     # id, which no entity resolver can split. Route it to the container.
 
     def get_edit_fields(self, asset_id: str) -> list[CreationField]:
-        if self._is_multi(asset_id):
-            # A Multi is set up in the Entity Editor: Edit… opens it on the
-            # Multi, and no form.
-            self._ops.open_entity_editor_for(asset_id)
-            return []
-        if containers.parse(asset_id) is not None:
-            return self._containers.edit_fields(asset_id)
-        kind = self._kinds.for_id(asset_id)
-        if kind is not None:
-            return kind.get_edit_fields(asset_id)
-        if nodes.is_node_id(asset_id):
-            return []
-        return self._ops.edit_fields(asset_id)
+        match self._card(asset_id):
+            case GroupContainer():
+                # A Multi is set up in the Entity Editor: Edit… opens it on
+                # the Multi, and no form.
+                self._ops.open_entity_editor_for(asset_id)
+                return []
+            case SceneContainer():
+                return self._containers.edit_fields(asset_id)
+            case LibraryCard(kind=kind):
+                return kind.get_edit_fields(asset_id)
+            case NodeCard():
+                return []
+            case EntityCard():
+                return self._ops.edit_fields(asset_id)
 
     def edit_entity(self, asset_id, fields):
-        if containers.parse(asset_id) is not None:
-            return self._containers.edit(asset_id, fields)
-        kind = self._kinds.for_id(asset_id)
-        if kind is not None:
-            return kind.edit(asset_id, fields)
-        if nodes.is_node_id(asset_id):
-            return False
-        return self._ops.edit(asset_id, fields)
+        match self._card(asset_id):
+            case GroupContainer() | SceneContainer():
+                return self._containers.edit(asset_id, fields)
+            case LibraryCard(kind=kind):
+                return kind.edit(asset_id, fields)
+            case NodeCard():
+                return False
+            case EntityCard():
+                return self._ops.edit(asset_id, fields)
 
     def can_delete_entity(self, asset: Asset) -> bool:
         """Entities and the library kinds that delete (recipes); not a
         node card (nothing to delete) nor a container card, whose menu
         has its own Delete."""
-        kind = self._kinds.for_id(asset.id)
-        if kind is not None:
-            return kind.can_delete(asset)
-        return not (
-            nodes.is_node_id(asset.id)
-            or containers.parse(asset.id) is not None
-        )
+        match self._card(asset.id):
+            case LibraryCard(kind=kind):
+                return kind.can_delete(asset)
+            case NodeCard() | GroupContainer() | SceneContainer():
+                return False
+            case EntityCard():
+                return True
 
     def can_add_to_container(self, asset: Asset, collection_id: str) -> bool:
         """The card menu's "Add to" targets (#28): only entity cards, and
@@ -1015,11 +1038,7 @@ class PipelineCatalog(Catalog):
         ref = containers.parse(collection_id)
         if ref is None:
             return True
-        if (
-            self._kinds.owns(asset.id)
-            or nodes.is_node_id(asset.id)
-            or containers.parse(asset.id) is not None
-        ):
+        if not isinstance(self._card(asset.id), EntityCard):
             return False
         return containers.refusal(ref, self._resolver.uri_for(asset.id)) is None
 
@@ -1029,14 +1048,15 @@ class PipelineCatalog(Catalog):
         return True
 
     def delete_entity(self, asset_id):
-        if containers.parse(asset_id) is not None:
-            return self._containers.delete(asset_id)
-        kind = self._kinds.for_id(asset_id)
-        if kind is not None:
-            return kind.delete(asset_id)
-        if nodes.is_node_id(asset_id):
-            return False
-        return self._ops.delete(asset_id)
+        match self._card(asset_id):
+            case GroupContainer() | SceneContainer():
+                return self._containers.delete(asset_id)
+            case LibraryCard(kind=kind):
+                return kind.delete(asset_id)
+            case NodeCard():
+                return False
+            case EntityCard():
+                return self._ops.delete(asset_id)
 
     def bucket_child_count(
         self, project_name: str, kind: str, bucket_name: str,
@@ -1099,25 +1119,24 @@ class PipelineCatalog(Catalog):
     def get_actions(self, detail: AssetDetail) -> list[AssetAction]:
         actions = []
 
-        kind = self._kinds.for_id(detail.id)
-        if kind is not None:
-            return kind.get_actions(detail)
-        if nodes.is_node_id(detail.id):
-            return self._nodes.get_actions(detail)
-
-        # A Multi / Root has no export folder and no entity row in the
-        # database editor, so those two actions could only fail on it —
-        # one silently, one with a "cannot resolve" dialog. Offer what
-        # works: Edit (coverage / asset list) and Delete, both routed by
-        # container id.
-        if containers.parse(detail.id) is not None:
-            return [
-                AssetAction(id="edit_entity", label="Edit…", icon="settings"),
-                AssetAction(
-                    id="delete_entity", label="Delete", icon="x",
-                    destructive=True,
-                ),
-            ]
+        match self._card(detail.id):
+            case LibraryCard(kind=kind):
+                return kind.get_actions(detail)
+            case NodeCard():
+                return self._nodes.get_actions(detail)
+            case GroupContainer() | SceneContainer():
+                # A Multi / Root has no export folder and no entity row in
+                # the database editor, so those two actions could only fail
+                # on it — one silently, one with a "cannot resolve" dialog.
+                # Offer what works: Edit (coverage / asset list) and Delete,
+                # both routed by container id.
+                return [
+                    AssetAction(id="edit_entity", label="Edit…", icon="settings"),
+                    AssetAction(
+                        id="delete_entity", label="Delete", icon="x",
+                        destructive=True,
+                    ),
+                ]
 
         is_asset = "type:asset" in detail.tags
 
@@ -1169,13 +1188,14 @@ class PipelineCatalog(Catalog):
     ) -> None:
         """Run a detail-panel or deck-item action, on the browser's worker.
         A failure raises into the browser, which reports it."""
-        kind = self._kinds.for_id(detail.id) if detail else None
-        if kind is not None:
-            kind.execute_action(action_id, detail)
-            return
-        if detail and nodes.is_node_id(detail.id):
-            self._nodes.execute_action(action_id, detail)
-            return
+        ref = self._card(detail.id) if detail else None
+        match ref:
+            case LibraryCard(kind=kind):
+                kind.execute_action(action_id, detail)
+                return
+            case NodeCard():
+                self._nodes.execute_action(action_id, detail)
+                return
 
         if action_id == "open_export":
             path = self._index.export_path(detail.id if detail else "")
@@ -1215,7 +1235,7 @@ class PipelineCatalog(Catalog):
         elif action_id.startswith("open_workfile:"):
             dept = action_id.split(":", 1)[1]
             target_id = detail.id if detail else ""
-            if target_id.startswith("group:"):
+            if isinstance(ref, GroupContainer):
                 self._workfiles.open_group_workfile(target_id, dept)
             else:
                 self._workfiles.open_workfile(target_id, dept)

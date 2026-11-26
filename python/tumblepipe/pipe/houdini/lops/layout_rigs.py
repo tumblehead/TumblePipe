@@ -39,6 +39,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.config.channels import CHANNEL_KEY
 from tumblepipe.pipe.houdini import prim_metadata, shot_rigs
 from tumblepipe.pipe.houdini.sops import import_rig, import_rigs
+from tumblepipe.pipe.houdini.nodes import button
 
 #: Where the rig characters are loaded on the layout stage.
 RIGS_ROOT = '/layout_rigs'
@@ -356,10 +357,12 @@ def create(scene, name):
     return ns.create_node(scene, name, LayoutRigs, 'layout_rigs')
 
 
+@button('Layout Rigs')
 def discover_rows(kwargs):
     LayoutRigs(kwargs['node']).discover()
 
 
+@button('Layout Rigs')
 def build_rigs(kwargs):
     LayoutRigs(kwargs['node']).build()
 

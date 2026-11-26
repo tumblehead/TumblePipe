@@ -178,7 +178,8 @@ mod macos {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-pub(crate) mod x11 {
+mod x11 {
+    use th_window::x11::{atom, property32, windows_of};
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask, Window};
 
@@ -190,31 +191,6 @@ pub(crate) mod x11 {
     /// next: GNOME's mutter, given none, left the window where it was. The
     /// raise thread waits this long (twice at most) on a Live view.
     const MOMENT: std::time::Duration = std::time::Duration::from_millis(200);
-
-    fn atom(conn: &impl Connection, name: &str) -> Result<u32, String> {
-        let reply = conn.intern_atom(false, name.as_bytes()).map_err(|e| e.to_string())?.reply().map_err(|e| e.to_string())?;
-        Ok(reply.atom)
-    }
-
-    /// The 32-bit values of `window`'s property `name` (empty when unset).
-    fn property32(conn: &impl Connection, window: Window, name: u32, kind: AtomEnum) -> Result<Vec<u32>, String> {
-        let reply =
-            conn.get_property(false, window, name, kind, 0, u32::MAX).map_err(|e| e.to_string())?.reply().map_err(|e| e.to_string())?;
-        Ok(reply.value32().map(|v| v.collect()).unwrap_or_default())
-    }
-
-    /// The managed client windows of process `pid` on the X server, by the
-    /// window manager's client list.
-    pub fn windows_of(conn: &impl Connection, root: Window, pid: u32) -> Result<Vec<Window>, String> {
-        let (clients, wm_pid) = (atom(conn, "_NET_CLIENT_LIST")?, atom(conn, "_NET_WM_PID")?);
-        let mut found = Vec::new();
-        for window in property32(conn, root, clients, AtomEnum::WINDOW)? {
-            if property32(conn, window, wm_pid, AtomEnum::CARDINAL)?.first() == Some(&pid) {
-                found.push(window);
-            }
-        }
-        Ok(found)
-    }
 
     /// Find this process's windows now (how many, or why none), then ask
     /// the window manager to lift them on a thread of its own, which owns

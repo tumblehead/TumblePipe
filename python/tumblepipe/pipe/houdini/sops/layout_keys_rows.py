@@ -42,6 +42,7 @@ import hou
 
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.nodes import button
 
 DEPARTMENT = 'layout'
 _ROW_PARMS = ('on', 'character', 'target', 'version', 'controls',
@@ -397,17 +398,18 @@ def create(scene, name):
     return ns.create_node(scene, name, LayoutKeys, 'layout_keys', 'Sop')
 
 
+@button('Layout Keys Rows')
 def discover_rows(kwargs):
     LayoutKeys(kwargs['node']).discover()
 
 
+@button('Copy All from Layout')
 def copy_rows(kwargs):
-    with ns.node_errors_as_message('Copy All from Layout'):
-        LayoutKeys(kwargs['node']).copy_all()
+    LayoutKeys(kwargs['node']).copy_all()
 
 
+@button('Copy from Layout')
 def copy_one(kwargs):
     index = int(kwargs['parm'].name()[len('replace'):])
-    with ns.node_errors_as_message('Copy from Layout'):
-        with hou.undos.group('Copy from layout'):
-            LayoutKeys(kwargs['node']).copy_row(index)
+    with hou.undos.group('Copy from layout'):
+        LayoutKeys(kwargs['node']).copy_row(index)

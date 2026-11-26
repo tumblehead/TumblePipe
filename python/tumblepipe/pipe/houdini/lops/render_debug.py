@@ -2,6 +2,7 @@
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini import render_stage
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.nodes import button
 
 class RenderDebug(EntityNode):
 
@@ -40,6 +41,7 @@ class RenderDebug(EntityNode):
 def create(scene, name):
     return ns.create_node(scene, name, RenderDebug, 'render_debug')
 
+@button('Render Debug')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = RenderDebug(raw_node)

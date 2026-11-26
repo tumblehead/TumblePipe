@@ -148,7 +148,7 @@ def open_grid(seed) -> None:
     the caller is the button's boundary."""
     from tumblepipe.asset_browser.scene import open_submit_jobs_dialog
     open_submit_jobs_dialog(
-        list(seed.uris), list(seed.names), seed.context,
+        list(seed.uris), seed.context,
         department=seed.department, channels=tuple(seed.channels) or None,
         render_department=seed.department,
     )
@@ -164,6 +164,6 @@ def open_comp_grid(shot_uri, department: str | None = None) -> None:
     from tumblepipe.asset_browser.scene import open_submit_jobs_dialog
     from tumblepipe.farm.submit import grid
     open_submit_jobs_dialog(
-        [shot_uri], [shot_uri.segments[-1]], 'shots',
+        [shot_uri], 'shots',
         department=department, tick_kinds=(grid.RENDER, grid.COMP),
     )

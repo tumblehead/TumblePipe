@@ -95,6 +95,8 @@ def build_pane(context: str):
     pane._fields = {}
     pane._seeding = False
     pane._context = context
+    pane._noun = grid.context_noun(context)
+    pane._comp_preview_timeline = None  # until _build_recomp_section
     pane._renderable_departments = ['animation', 'render']
     pane._refresh_timer = _Timer()
     changes = []
@@ -238,6 +240,17 @@ def main() -> int:
     check("shots of different ranges show their union, rolls included, and say so",
           (view.lo, view.hi) == (996, 1240) and view.mixed and 'union' in view.caption
           and 'union' in timeline.toolTip(), repr(view))
+    pane._update_timelines([
+        rows[0], _row('z', {'render': False, 'first_frame': 900, 'last_frame': 2000}),
+    ])
+    view = timeline.view()
+    check("a row not rendering is left out of the timeline's frames",
+          (view.lo, view.hi, view.caption) == (1001, 1100, ''), repr(view))
+    field.setText('1001-1030 1040-1055')
+    pane._update_timelines(rows)
+    check("the preview timeline shades what the Frame list leaves out",
+          pane._rnd_preview_timeline._context == ((1001, 1030), (1040, 1055)),
+          repr(pane._rnd_preview_timeline._context))
     field.setText('')
 
     # 6. Preview frames: hidden until Preview is ticked, then with a timeline
@@ -278,6 +291,14 @@ def main() -> int:
     ctl.apply(1001, 1006, False)
     check("a drag on the comp timeline adds only frames on the comp's step",
           pane._comp_preview_list.text() == '1001 1003 1005', pane._comp_preview_list.text())
+    class _Status:
+        rendered = (1010, 1020)
+    pane._statuses = {'c': _Status()}
+    pane._update_timelines([_row('c', {'comp': True})])
+    check("a comp alone shows the frames rendered on disk",
+          (ctl.view().lo, ctl.view().hi) == (1010, 1020), repr(ctl.view()))
+    pane._statuses = {}
+    pane._comp_preview_list.setText('')
 
     # 8. A remembered Preview box shows its row as it is set back
     pane._remembered = remembered.capture({}, {'render_preview': True, 'render_full': True, 'comp_preview': False}, [])
@@ -454,6 +475,17 @@ def main() -> int:
     check("the Assets tab hides the Step with the frames (a turntable's own step)",
           not _row_visible(asset_pane, asset_pane._rnd_step.parentWidget())
           and asset_pane._render_step() == 1)
+    from tumblepipe.pipe import turntable  # noqa: PLC0415
+    studio = turntable.farm_frames()
+    asset_pane._rnd_frame_list.setText('1001-1004 1008')
+    asset_pane._update_timelines([_row('t', {'render': True, 'first_frame': 1, 'last_frame': 5})])
+    view = asset_pane._rnd_frame_timeline.view()
+    check("the Assets tab's timelines show the turntable's frames on its step",
+          (view.lo, view.hi) == (studio.first, studio.last)
+          and asset_pane._rnd_frame_timeline._step == max(1, studio.step)
+          and asset_pane._rnd_preview_timeline._context == (),
+          f"{view!r} {asset_pane._rnd_frame_timeline._step} {asset_pane._rnd_preview_timeline._context}")
+    asset_pane._rnd_frame_list.setText('')
 
     print()
     print('FAILED: ' + ', '.join(FAILED) if FAILED else 'all ok')

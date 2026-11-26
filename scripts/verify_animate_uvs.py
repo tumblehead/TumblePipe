@@ -9,7 +9,7 @@ attributes their Attributes pattern names, and ``uv`` was not among them: an
 asset's meshes have their ``primvars:st`` from the asset's own layers, but a
 mesh made in the dive has no prim under it and got none. Now the imports read
 ``uv*``, and ``apply`` takes back out what the asset already says
-(``animate_points.asset_primvars``) and what only a merge filled in
+(``animate_primvars.asset_primvars``) and what only a merge filled in
 (``filler_primvars``); ``tests/test_animate_points.py`` pins those on plain
 stages, this cooks and saves the real HDA over a real asset layer.
 

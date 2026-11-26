@@ -81,6 +81,32 @@ def render_step(settings: dict) -> int:
     return step if step is not None and step > 0 else 1
 
 
+def turntable_problems(settings: dict, studio_step: int) -> list[str]:
+    """Why an asset's render settings cannot render its turntable (#53),
+    which is the studio's frames on the studio's step (``studio_step``):
+    a Step other than 1, or a Frame List. Empty when they can."""
+    problems = []
+    if render_step(settings) != 1:
+        problems.append(
+            f"an asset's turntable renders on the studio's step ({studio_step}); "
+            "set the render step to 1"
+        )
+    if (settings.get('frame_list') or '').strip():
+        problems.append(
+            "an asset's turntable renders the studio's frames; clear the frame list"
+        )
+    return problems
+
+
+def as_turntable(settings: dict) -> dict:
+    """``settings`` as an asset's render sends them: no Frame List (the
+    turntable renders the studio's frames) and new versions only (Into
+    version renders whole versions there, #92). The Step reads 1 already
+    (``grid.render_step``). :func:`turntable_problems` finds nothing in the
+    result."""
+    return {**settings, 'frame_list': '', 'into_version': repair.TARGET_NEW}
+
+
 def rolled_range(settings: dict) -> Range | None:
     """The frames the render covers without a Frame List, rolls included;
     None without a range."""

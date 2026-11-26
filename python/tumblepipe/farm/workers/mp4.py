@@ -1,16 +1,13 @@
 """Encode a frame sequence into mp4s (the layer and slapcomp reviews)."""
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import shutil
 import sys
-import os
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
-from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import exr, mp4
 from tumblepipe.pipe import comp, review_events
@@ -37,11 +34,7 @@ def main(
     is the list of frames, encoded one after the other with no gap filled
     in, each frame's number burnt into its picture so the jumps show."""
 
-    # Check that OCIO has been set
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
     # Print environment variables for debugging
     print_env()
@@ -53,10 +46,7 @@ def main(
         return error(f'Input frame not found: {input_frame_path}')
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Convert EXRs to JPGs
         temp_input_path = temp_path / 'temp.####.jpg'

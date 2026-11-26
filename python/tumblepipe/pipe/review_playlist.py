@@ -66,6 +66,7 @@ from tumblepipe.pipe.paths.render import (
     get_check_render_step,
     get_render_context,
 )
+from tumblepipe.util.text import ordinal
 
 # The AOV a render take shows when it has one.
 BEAUTY = 'beauty'
@@ -114,12 +115,6 @@ class Stack:
 STACK_LABEL = 'layers'
 # What a check render's take label says, in brackets at its end.
 CHECK_LABEL = 'check'
-
-def ordinal(number: int) -> str:
-    """``number`` as an English ordinal: 1st, 2nd, 3rd, 4th, 11th, 21st."""
-    if 10 <= number % 100 <= 20: suffix = 'th'
-    else: suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th')
-    return f'{number}{suffix}'
 
 def check_label(step: int) -> str:
     """What a check render's take label ends in, its step said:

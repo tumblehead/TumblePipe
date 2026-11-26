@@ -497,8 +497,7 @@ A department turned off on a shot:
 - gets no new workfile from the browser (**New from Template**, **New from
   Current**);
 - is not offered by Farm Submit for the shot, and `batch_submit` refuses a
-  publish of it or a Render / Playblast cut at it (an old "up to" publish
-  walks past it);
+  publish of it or a Render / Playblast cut at it;
 - collects no export node in a publish (a Multi's workfile still publishes
   its other members).
 

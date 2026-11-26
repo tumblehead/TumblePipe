@@ -1,0 +1,23 @@
+[package]
+name = "th_window"
+description = "An app's own windows through the OS, for Cinedex and Clean Up: the window icon and the X11 window lookup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The icon's PNGs, read for X11 (`src/app_icon.rs`).
+png = "0.18"
+
+# The Dock icon (`src/app_icon.rs`). The objc2 winit already links.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5.2"
+
+# The X11 window icon and window lookup (`src/x11.rs`): x11rb's own
+# connection, no libX11 to link. Already in the tree through winit.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = "0.13"
+
+[dev-dependencies]
+proptest.workspace = true

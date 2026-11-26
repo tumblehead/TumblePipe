@@ -712,8 +712,11 @@ def _make_asset_drop_callback(catalog, asset_id: str):
     under the cursor when the radial slot fires.
 
     Uses the asset_browser drop pipeline: build a DropContext from the
-    pane under the cursor, try the catalog's ``on_drop`` first, fall
-    back to executing the first non-download action.
+    pane under the cursor and hand it to the catalog's ``on_drop``. With
+    the cursor over no network, or when ``on_drop`` declines, the first
+    non-download action runs instead. An ``on_drop`` that raises is
+    reported and nothing else runs: it may have placed part of the asset
+    already, and the action would import it a second time.
     """
     def _cb():
         def _do():
@@ -738,9 +741,12 @@ def _make_asset_drop_callback(catalog, asset_id: str):
                 try:
                     if catalog.on_drop(detail, drop):
                         return
-                except Exception:
-                    pass  # fall through to the action route
-            # Fallback: execute the first non-download (file_id is None) action
+                except Exception as exc:
+                    from tumblepipe.pipe.houdini.ui.report import report_failure
+                    report_failure(f"Dropping {detail.name}", exc)
+                    return
+            # No network under the cursor, or on_drop declined: the first
+            # non-download (file_id is None) action
             try:
                 actions = catalog.get_actions(detail)
             except Exception as exc:

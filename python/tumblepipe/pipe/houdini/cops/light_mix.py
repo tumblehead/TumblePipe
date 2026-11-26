@@ -30,6 +30,7 @@ import hou
 
 from tumblepipe.pipe import comp
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.nodes import button
 
 TYPE_NAME = 'light_mix'
 
@@ -118,14 +119,14 @@ class LightMix(ns.Node):
     def rewire_cable(self) -> bool:
         """Move a cable taken straight from an import_render's ``aov`` to
         its ``lpe`` (:func:`cable_target`); whether it did."""
-        from tumblepipe.pipe.houdini.cops.import_render import _is_import_render, outputs_layout
+        from tumblepipe.pipe.houdini.cops.import_render import is_import_render, outputs_layout
         native = self.native()
         connection = next(
             (c for c in native.inputConnections() if c.inputIndex() == CABLE_INPUT), None
         )
         if connection is None: return False
         source = connection.inputNode()
-        if not _is_import_render(source): return False
+        if not is_import_render(source): return False
         target = cable_target(connection.outputIndex(), outputs_layout(source))
         if target is None: return False
         native.setInput(CABLE_INPUT, source, target)
@@ -321,9 +322,9 @@ def repair_loaded(raw_node):
     import feeding the mix that was saved before #67 moves onto its new
     outputs first (whichever of the two loads first), then the cable moves
     from ``aov`` to ``lpe``."""
-    from tumblepipe.pipe.houdini.cops.import_render import ImportRender, _is_import_render
+    from tumblepipe.pipe.houdini.cops.import_render import ImportRender, is_import_render
     for connection in raw_node.inputConnections():
-        if _is_import_render(connection.inputNode()):
+        if is_import_render(connection.inputNode()):
             ImportRender(connection.inputNode()).upgrade()
     node = LightMix(raw_node)
     mix = raw_node.node(MIX)
@@ -338,7 +339,7 @@ def repair_loaded(raw_node):
             _ensure_io(mix)
 
 
+@button('Sync Rows')
 def sync(kwargs):
     node = LightMix(kwargs['node'])
-    with ns.node_errors_as_message('Sync Rows'):
-        node.sync_rows()
+    node.sync_rows()

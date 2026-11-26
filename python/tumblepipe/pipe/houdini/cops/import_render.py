@@ -152,6 +152,7 @@ from tumblepipe.pipe.paths import get_render_context
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
+from tumblepipe.pipe.houdini.nodes import button
 
 TYPE_NAME = 'import_render'
 
@@ -623,7 +624,7 @@ def _reads_of(native) -> list:
     inputs and, for a subnet (a light mix, any HDA), its children, which
     the subnet's outputs read."""
     pairs = _wired_inputs(native)
-    if not _is_import_render(native):
+    if not is_import_render(native):
         pairs += [(child, -1) for child in native.children()]
     return pairs
 
@@ -1989,7 +1990,7 @@ def _upstream_native(native, input_index: int):
         )
         if connection is None: return None
         source = connection.inputNode()
-        if _is_import_render(source):
+        if is_import_render(source):
             return source, connection.outputIndex()
         current, index = source, 0
     return None
@@ -2002,7 +2003,7 @@ def upstream_import(native, input_index: int = 0):
     return None if found is None else found[0]
 
 
-def _is_import_render(native) -> bool:
+def is_import_render(native) -> bool:
     if native is None: return False
     parts = native.type().name().split('::')
     return len(parts) >= 2 and parts[0] == 'th' and parts[1] == TYPE_NAME
@@ -2186,21 +2187,22 @@ def upgrade_loaded(raw_node):
         pass
 
 
+@button('Import Render')
 def execute(kwargs):
     """Update: resolve again, and import the scene."""
     node = ImportRender(kwargs['node'])
-    with ns.node_errors_as_message('Import Render'):
-        node.execute(scene=True)
+    node.execute(scene=True)
 
 
+@button('Clear Cache')
 def clear_cache(kwargs):
     """Clear Cache: drop the frames the node's Cache COPs keep (the next
     play reads them from disk again)."""
     node = ImportRender(kwargs['node'])
-    with ns.node_errors_as_message('Clear Cache'):
-        node.clear_cache()
+    node.clear_cache()
 
 
+@button('Import Render')
 def scene_changed(kwargs):
     """A Scene setting changed: import the scene again (its Reads say how
     it went, without a dialog)."""
@@ -2211,6 +2213,7 @@ def scene_changed(kwargs):
         pass
 
 
+@button('Import Render')
 def changed(kwargs):
     """Channel, Department or Version changed: resolve again. A render that
     does not resolve shows on the Reads label, without a dialog."""
@@ -2221,31 +2224,32 @@ def changed(kwargs):
         pass
 
 
+@button('Outputs')
 def unpack_changed(kwargs):
     """AOV Outputs toggled: add or remove the Cable Unpacks beside the
     node."""
     node = ImportRender(kwargs['node'])
-    with ns.node_errors_as_message('Outputs'):
-        if node.get_unpack_outputs():
-            node.execute()  # resolves (rebuilding nothing unchanged) and syncs them
-        else:
-            node.sync_unpacks(None)
+    if node.get_unpack_outputs():
+        node.execute()  # resolves (rebuilding nothing unchanged) and syncs them
+    else:
+        node.sync_unpacks(None)
 
 
+@button('Open Location')
 def open_location(kwargs):
     node = ImportRender(kwargs['node'])
-    with ns.node_errors_as_message('Open Location'):
-        node.open_location()
+    node.open_location()
 
 
+@button('Render')
 def render(kwargs):
     """Render: open Farm Submit with this shot's Render ticked and this
     import's channel checked, to render what it reads again."""
     node = ImportRender(kwargs['node'])
-    with ns.node_errors_as_message('Render'):
-        node.open_farm_submit()
+    node.open_farm_submit()
 
 
+@button('Import Render')
 def select_entity(kwargs):
     node = ImportRender(kwargs['node'])
     node.pick_entity('Select Shot', contexts=('shots',))

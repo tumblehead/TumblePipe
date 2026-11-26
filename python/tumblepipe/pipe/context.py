@@ -6,7 +6,7 @@ from tumblepipe import naming
 from tumblepipe.config.channels import read_published_channel
 from tumblepipe.config.department import list_departments
 from tumblepipe.util import events
-from tumblepipe.util.io import load_json, store_json
+from tumblepipe.util.io import load_json, load_json_if_exists, store_json
 from tumblepipe.util.houdini import hou
 from tumblepipe.pipe.paths import (
     Context,
@@ -286,6 +286,15 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
             note=str(note or ""),
         ),
     )
+
+
+def read_version_entry(workspace: Path, version_name: str) -> tuple[str, str]:
+    """``(user, note)`` of the version entry :func:`save_context` wrote in
+    ``workspace`` for ``version_name``, both blank when it has none (saved
+    before sidecars, or before notes). One read: the browser's rows read
+    this per version, on a share. An entry that will not parse raises."""
+    entry = load_json_if_exists(workspace / "_context" / f"{version_name}.json") or {}
+    return str(entry.get("user") or ""), str(entry.get("note") or "")
 
 
 def workfile_context(

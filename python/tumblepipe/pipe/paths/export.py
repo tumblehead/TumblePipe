@@ -34,6 +34,12 @@ def get_export_uri(
         department_name
     )
 
+
+def get_staged_uri(entity_uri: Uri, channel_name: str = 'default') -> Uri:
+    """export:/{entity}/_staged/{channel} — the directory holding the
+    entity's staged builds of a channel."""
+    return Uri.parse('export:/') / entity_uri.segments / '_staged' / channel_name
+
 def get_rig_export_path(asset_uri: Uri, channel_name: str = 'default') -> Path:
     """export:/{asset}/{channel}/rig — the directory holding a rig's versions."""
     return api.storage.resolve(get_export_uri(asset_uri, channel_name, 'rig'))

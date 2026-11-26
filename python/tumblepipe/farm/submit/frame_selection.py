@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import preview_frames
+from tumblepipe.farm.specs import submission
 
 #: Single frames in order (Preview frames).
 FRAMES = 'frames'
@@ -217,6 +218,40 @@ def view(spans, noun: str = 'shots') -> View | None:
         caption = '' if count == 1 else f"all {count} {noun}"
         return View(lo, hi, caption, mixed=False)
     return View(lo, hi, f"union of {count} {noun}' frames", mixed=True)
+
+
+@dataclass(frozen=True)
+class RenderTimelines:
+    """What the Render's timelines show: the frames (``view``) on the
+    render's ``step``; ``shaded`` the ranges the Frame list keeps, outside
+    which the Preview frames timeline is shaded (none: nothing shaded)."""
+    view: View | None
+    step: int
+    shaded: tuple[Range, ...] = ()
+
+
+def render_timelines(
+    settings, noun: str, step: int, frame_list: str | None, turntable=None,
+) -> RenderTimelines:
+    """The Render's timelines for the ticked rows' resolved ``settings``:
+    the frames of the rows that render (rolls included, as the Frame list
+    and the Preview frames are read) on the form's ``step``, shaded
+    outside the ``frame_list``. On an asset's tab ``turntable`` is the
+    studio's ``(first, last, step)``: the timelines show its frames on its
+    step, nothing shaded (an asset sends no Frame list)."""
+    if turntable is not None:
+        first, last, turntable_step = turntable
+        return RenderTimelines(View(first, last, "the turntable's frames"), turntable_step)
+    spans = [submission.rolled_range(s) for s in settings if s.get('render')]
+    return RenderTimelines(view(spans, noun), step, read(frame_list, RANGES).ranges)
+
+
+def comp_timeline(comps, noun: str) -> tuple[View | None, int]:
+    """``(view, step)`` of the Comp's Preview frames timeline for the
+    ticked comps: ``(span, settings)`` each, ``span`` the frames it comps
+    (None without a range). The step is theirs when they share one, else 1."""
+    steps = {submission.comp_step(settings) for _span, settings in comps}
+    return view([span for span, _settings in comps], noun), steps.pop() if len(steps) == 1 else 1
 
 
 # ── Zoom (Remy, 2026-11-17: ~200 frames in ~350 px is under two pixels a

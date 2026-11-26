@@ -22,7 +22,7 @@ from tumblepipe.farm.manager import rows
 
 # Deadline's job priority range: 0 to the repository's Maximum Priority,
 # 100 unless changed, which is also what TumblePipe submits within
-# (apps.deadline checks 0..100).
+# (farm.job.Job.job_info checks 0..100).
 MIN_PRIORITY = 0
 MAX_PRIORITY = 100
 

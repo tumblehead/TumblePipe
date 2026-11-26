@@ -22,6 +22,7 @@ the shot from the workfile the node lives in.
 
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.nodes import button
 
 # The pipeline's render camera. Shot templates author it here (the layout
 # template's camera LOP, the animation template's lopimportcam), and playblast
@@ -93,10 +94,12 @@ def on_created(raw_node):
         node._update_labels()
 
 
+@button('Import Lop Camera')
 def execute(kwargs):
     ImportLopCamera(kwargs['node']).execute()
 
 
+@button('Import Lop Camera')
 def select(kwargs):
     """Entity button."""
     ImportLopCamera(kwargs['node']).pick_entity('Select Shot')

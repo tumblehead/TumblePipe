@@ -45,8 +45,9 @@ def build_project(base: Path) -> Path:
 
 
 def main() -> int:
-    from tumblepipe.archive.app import _add_houdini_dll_directory, build_window
-    _add_houdini_dll_directory()
+    from tumblepipe.archive.app import build_window
+    from tumblepipe.util.hfs import add_houdini_dll_directory
+    add_houdini_dll_directory()
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     boxes = []

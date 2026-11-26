@@ -1,22 +1,19 @@
 """Composite a span of frames: render the comp workfile's th::export_comp nodes in hython
 (``composite_houdini.py``) for the frames still missing their receipts."""
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import sys
-import os
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
 from tumblepipe.util.io import store_json
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_hython_env, job_data_dir, print_env
-from tumblepipe.farm.frames import frame_file, frame_of
+from tumblepipe.farm.frames import frame_of
 from tumblepipe.farm.specs import composite as composite_spec
 from tumblepipe.farm.worker import error
 
@@ -35,25 +32,14 @@ def main(
     follows: list | None = None
     ) -> int:
 
-    # Check that OCIO has been set
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
     # Print environment variables for debugging
     print_env()
 
     # Find the frames still missing their receipts
-    missing_receipt_paths = [
-        current_receipt_path
-        for current_receipt_path in (
-            frame_file(receipt_path, frame_index)
-            for frame_index in render_range
-        )
-        if not current_receipt_path.exists()
-    ]
-    if len(missing_receipt_paths) == 0:
+    missing_receipt_paths = worker.missing_receipts(receipt_path, render_range)
+    if not missing_receipt_paths:
         print('Output receipts already exist')
         return 0
     missing_frames = list(map(frame_of, missing_receipt_paths))
@@ -62,10 +48,7 @@ def main(
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Store the hython half's config
         config_path = temp_path / 'config.json'
@@ -94,8 +77,7 @@ def main(
         )
 
     # Check if output receipts were generated
-    for current_receipt_path in missing_receipt_paths:
-        if current_receipt_path.exists(): continue
+    for current_receipt_path in worker.unwritten(missing_receipt_paths):
         return error(f'Output receipt not found: {current_receipt_path}')
 
     # Done

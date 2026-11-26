@@ -29,6 +29,7 @@ from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.util import events
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.nodes import button
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ def on_created(raw_node):
     ExportTexture(raw_node)._update_labels()
 
 
+@button('Export Texture')
 def publish(kwargs):
     node = ExportTexture(kwargs['node'])
     try:
@@ -157,11 +159,13 @@ def publish(kwargs):
             severity=hou.severityType.Message)
 
 
+@button('Export Texture')
 def select(kwargs):
     node = ExportTexture(kwargs['node'])
     node.pick_entity(title='Select Asset', contexts=('assets',))
 
 
+@button('Export Texture')
 def on_entity_changed(kwargs):
     ExportTexture(kwargs['node'])._update_labels()
 

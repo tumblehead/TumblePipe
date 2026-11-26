@@ -34,6 +34,7 @@ from typing import Iterable, Mapping, Optional, Sequence
 
 from tumblepipe import naming
 from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_data_aov, is_matte_aov, is_ramp_aov
+from tumblepipe.util.text import ordinal
 
 # The render department a comp writes, and the cross-channel layer of a
 # render department's version (the render chain's slapcomp; the composite
@@ -535,8 +536,8 @@ def list_check_versions(renders: Mapping, department: str, channel: str) -> list
 
 def check_version_label(version: str, step: int) -> str:
     """A check render in the Version menu: ``v0014 (check, every 5th)``."""
-    from tumblepipe.pipe.hold_frames import _ordinal
-    return f'{version} (check, every {_ordinal(step)})' if step > 1 else f'{version} (check)'
+    from tumblepipe.pipe.review_playlist import check_label
+    return f'{version} {check_label(step)}'
 
 
 def version_items(complete: Iterable[str], checks: Iterable[tuple[str, int]]) -> list[tuple[str, str]]:
@@ -850,9 +851,8 @@ def held_frames(reads: Iterable[Resolved], frames: Frames) -> list[int]:
 def comp_frames_text(frames: Frames) -> str:
     """A comp's frames in a message: ``1001-1122, every frame``, ``1001-1122,
     every 2nd frame``."""
-    from tumblepipe.pipe.hold_frames import _ordinal
     first, last, step = frames
-    every = 'every frame' if step <= 1 else f'every {_ordinal(step)} frame'
+    every = 'every frame' if step <= 1 else f'every {ordinal(step)} frame'
     return f'{first}-{last}, {every}'
 
 
@@ -871,16 +871,15 @@ def held_text(frames: Frames, checks: Sequence[Frames], shows: str = HELD) -> st
     every 2nd frame: 61 frames held``. Empty when every comp frame is one
     each check render has. ``shows`` says what those frames show
     (:data:`HELD`, :data:`BLACK`, :data:`HELD_UNLESS_EMPTY`)."""
-    from tumblepipe.pipe.hold_frames import _ordinal
     held = frames_held(frames, checks)
     if not held: return ''
     first, last, step = frames
-    every = 'every frame' if step <= 1 else f'every {_ordinal(step)} frame'
+    every = 'every frame' if step <= 1 else f'every {ordinal(step)} frame'
     steps = sorted({
         max(1, check[2]) for check in checks
         if not set(frames_of(frames)) <= set(frames_of(check))
     })
-    named = [f'every {_ordinal(each)} frame' if each > 1 else 'every frame' for each in steps]
+    named = [f'every {ordinal(each)} frame' if each > 1 else 'every frame' for each in steps]
     source = (
         f'a render {named[0]}' if len(named) == 1
         else f'renders {", ".join(named[:-1])} and {named[-1]}'
@@ -995,7 +994,6 @@ def check_comp_note(step: int, reads_check_render: bool, copy_to_edit: bool = Fa
     is :func:`held_text` of the check renders it reads: when it holds
     frames, that is the why (``every frame of 1001-1122 from a render every
     2nd frame: 61 frames held, a check comp, not published, no daily``)."""
-    from tumblepipe.pipe.hold_frames import _ordinal
     if not is_check_comp(step, reads_check_render or bool(held)): return ''
     if held:
         text = f'{held}, a check comp, not published, no daily'
@@ -1004,7 +1002,7 @@ def check_comp_note(step: int, reads_check_render: bool, copy_to_edit: bool = Fa
         return text
     why = []
     if step > 1:
-        why.append(f'every {_ordinal(step)} frame')
+        why.append(f'every {ordinal(step)} frame')
     if reads_check_render:
         why.append('reads a check render')
     text = f'{" and ".join(why)}: a check comp, not published, no daily'
@@ -1024,13 +1022,12 @@ def unpublished_reason(contexts: Iterable[tuple[str, Optional[Mapping]]]) -> Opt
     daily and the sync were queued. A missing ``context.json`` or one with
     no ``published`` is published, so versions written before the flag
     keep publishing (``pipe.paths.render.is_published``)."""
-    from tumblepipe.pipe.hold_frames import _ordinal
     for name, context in contexts:
         if context is None or context.get('published', True) is not False:
             continue
         step = context.get('step_size', 1)
         if isinstance(step, int) and not isinstance(step, bool) and step > 1:
-            why = f'every {_ordinal(step)} frame'
+            why = f'every {ordinal(step)} frame'
         else:
             why = 'reads a check render'
         return f'{name} {why}: a check comp, not published'
@@ -1842,7 +1839,6 @@ class RenderSeed:
     department, that department as the render cut (Up to), which is also
     the department the render is written under, so the import reads it."""
     uris: tuple
-    names: tuple[str, ...]
     context: str
     department: Optional[str]
     channels: tuple[str, ...]
@@ -1857,7 +1853,6 @@ def render_seed(shot_uri, channel: str, department: str) -> RenderSeed:
     channel = (channel or '').strip()
     return RenderSeed(
         uris=(shot_uri,),
-        names=(shot_uri.segments[-1],),
         context='shots',
         department=None if department in ('', BEST) else department,
         channels=(channel,) if channel else (),

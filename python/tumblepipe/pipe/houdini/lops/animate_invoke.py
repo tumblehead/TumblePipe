@@ -20,6 +20,7 @@ since th::animate copies only P every frame.
 """
 
 import hou
+from tumblepipe.pipe.houdini.nodes import button
 
 SCENE_SUFFIX = '.char'
 RIG_SUFFIX = '.rig'
@@ -91,7 +92,7 @@ def shapes_pattern(animate_node) -> str | None:
     return parm.evalAsString() if parm is not None else None
 
 
-def _animate_node(node):
+def enclosing_animate(node):
     """The th::animate holding `node` (a node inside its `points_sops`)."""
     while node is not None and not node.type().name().startswith('th::animate'):
         node = node.parent()
@@ -101,7 +102,7 @@ def _animate_node(node):
 # --- the dive's output ----------------------------------------------------
 
 
-def _name(prim) -> str:
+def prim_name(prim) -> str:
     attrib = prim.geometry().findPrimAttrib('name')
     return prim.attribValue('name') if attrib is not None else ''
 
@@ -112,7 +113,7 @@ def scene_characters(geo) -> list[str]:
     if not is_scene(geo):
         return []
     return [
-        name[:-len(SCENE_SUFFIX)] for name in map(_name, geo.prims())
+        name[:-len(SCENE_SUFFIX)] for name in map(prim_name, geo.prims())
         if name.endswith(SCENE_SUFFIX)
     ]
 
@@ -137,7 +138,7 @@ def is_scene(geo) -> bool:
     for prim in prims:
         if prim.type() != hou.primType.PackedGeometry:
             return False
-        if has_rig or not _name(prim).endswith(SCENE_SUFFIX):
+        if has_rig or not prim_name(prim).endswith(SCENE_SUFFIX):
             continue
         inner = prim.getEmbeddedGeometry()
         if inner is None or inner.findPrimAttrib('name') is None:
@@ -200,7 +201,7 @@ def _dive_characters(sop_node) -> list[str]:
 
 
 def _skeletons(sop_node) -> list[str]:
-    animate = _animate_node(sop_node)
+    animate = enclosing_animate(sop_node)
     if animate is None:
         return []
     from tumblepipe.pipe.houdini.lops import animate_segments
@@ -215,7 +216,7 @@ def _skeletons(sop_node) -> list[str]:
 # `taken` is empty and these are what they always were.
 
 def invoke_characters(sop_node) -> str:
-    animate = _animate_node(sop_node)
+    animate = enclosing_animate(sop_node)
     if animate is None:
         return '*'
     from tumblepipe.pipe.houdini.lops import animate_segments
@@ -252,7 +253,7 @@ def shape_prefix(folder_geo) -> str | None:
         for shape in folder_geo.prims():
             if shape.type() != hou.primType.PackedGeometry:
                 continue
-            if not _name(shape).endswith('.shp'):
+            if not prim_name(shape).endswith('.shp'):
                 continue
             shape_geo = shape.getEmbeddedGeometry()
             if shape_geo is None or shape_geo.findPrimAttrib('path') is None:
@@ -306,11 +307,11 @@ def name_skeletons(geo, scene) -> None:
     scene_folders = {}
     if scene is not None and scene.findPrimAttrib('name') is not None:
         for prim in scene.prims():
-            scene_folders[_name(prim)] = prim
+            scene_folders[prim_name(prim)] = prim
     for folder in geo.prims():
         if folder.type() != hou.primType.PackedGeometry:
             continue
-        folder_name = _name(folder)
+        folder_name = prim_name(folder)
         inner = folder.getEmbeddedGeometry()
         if inner is None or inner.findPrimAttrib('name') is None:
             continue
@@ -324,7 +325,7 @@ def name_skeletons(geo, scene) -> None:
         )
         inner = inner.freeze()
         for shape in inner.prims():
-            name = _name(shape)
+            name = prim_name(shape)
             if not name.endswith(SKELETON_SUFFIX):
                 continue
             if shape.type() != hou.primType.PackedGeometry:
@@ -352,6 +353,7 @@ def character_menu(animate_node) -> list[str]:
     return menu
 
 
+@button('Animate Invoke')
 def discover(animate_node) -> int:
     """The Discover button: a row for each of the scene's characters not
     listed yet (Geometry on, Skeleton off). Returns how many were added."""

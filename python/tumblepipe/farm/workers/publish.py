@@ -2,14 +2,13 @@
 (``publish_houdini.py``), then queue the staged build a renderable asset
 publish calls for."""
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
 import sys
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
 from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.config.department import is_renderable
@@ -109,10 +108,7 @@ def main(config: dict, _frame_span: BlockRange) -> int:
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Create a temporary config file
         temp_config_path = temp_path / 'config.json'

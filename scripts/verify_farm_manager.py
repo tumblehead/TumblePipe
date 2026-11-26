@@ -33,11 +33,14 @@ real farm (read only: no farm command is sent). Checks:
      then Other… and leaves local jobs out, a refusal is a message box
  11. closing a window showing This machine raises nothing from its slots
      (the teardown's emptied Show combo once asked the shut-down executor)
+ 12. every result a background call hands back, done or failed, calls the
+     window methods and leaves the state data/farm_manager_dispatch.json
+     records (``--record-dispatch`` rewrites it)
 
 Run (no Houdini licence: Houdini's bundled Python, not hython; see
 ``headless-qt-verify`` in the repo notes):
 
-    QT_QPA_PLATFORM=offscreen "$HFS/python313/python.exe" scripts/verify_farm_manager.py [shot.png]
+    QT_QPA_PLATFORM=offscreen "$HFS/python313/python.exe" scripts/verify_farm_manager.py [shot.png | --record-dispatch]
 """
 
 from __future__ import annotations
@@ -716,6 +719,164 @@ def verify_priority(app: QApplication, win, project: str) -> None:
          deadline_jobs._command, QMessageBox.warning) = saved
 
 
+DISPATCH_RECORD = REPO_ROOT / 'tests' / 'data' / 'farm_manager_dispatch.json'
+
+
+def _dispatch_cases():
+    """Each background result the window gets back, done and failed:
+    ``(label, kind, payload, outcome, value)``. The payload is what the
+    window submitted beside the call; the current job is ``job-1``."""
+    from tumblepipe.apps.deadline import DeadlineNotInstalled
+    from tumblepipe.farm.manager import cleanup
+    boom = RuntimeError('boom')
+    return [
+        ('farm jobs read', 'farm_jobs', (), 'done', []),
+        ('farm jobs failed', 'farm_jobs', (), 'failed', boom),
+        ('farm jobs, no Deadline Client', 'farm_jobs', (), 'failed', DeadlineNotInstalled('none here')),
+        ('tasks of the shown job', 'farm_tasks', ('job-1',), 'done', ['t']),
+        ('tasks of another job', 'farm_tasks', ('job-2',), 'done', ['t']),
+        ('tasks failed', 'farm_tasks', ('job-1',), 'failed', boom),
+        ('reports of the shown task', 'farm_reports', ('job-1', '1-2'), 'done', ['r']),
+        ('reports of another task', 'farm_reports', ('job-1', '3-4'), 'done', ['r']),
+        ('reports failed', 'farm_reports', ('job-1', '1-2'), 'failed', boom),
+        ('report text of another report', 'farm_report_text', ('p.txt',), 'done', 'text'),
+        ('report text failed', 'farm_report_text', ('p.txt',), 'failed', boom),
+        ('farm control sent', 'farm_control', ('suspend', 2), 'done', 'ok'),
+        ('farm control failed', 'farm_control', ('delete', 1), 'failed', boom),
+        ('priority set', 'farm_priority', (60, 3), 'done', 60),
+        ('priority failed', 'farm_priority', (60, 3), 'failed', boom),
+        ('presets read', 'presets', (), 'done', ['p']),
+        ('presets failed', 'presets', (), 'failed', boom),
+        ('cleanup done', 'farm_cleanup', ('finished',), 'done', (cleanup.Cleaned(2, 5), 0)),
+        ('cleanup short', 'farm_cleanup', ('failed',), 'done', (cleanup.Cleaned(1, 1, 'denied'), 2)),
+        ('cleanup failed', 'farm_cleanup', ('failed',), 'failed', boom),
+        ('run here planned', 'run_here', ('job-1',), 'done', 'plan'),
+        ('run here failed', 'run_here', ('job-1',), 'failed', boom),
+        ('render again planned', 'render_again_plan', ('job-1',), 'done', 'plan'),
+        ('render again plan failed', 'render_again_plan', ('job-1',), 'failed', boom),
+        ('render again, local work', 'render_again', (3,), 'done', True),
+        ('render again, farm only', 'render_again', (1,), 'done', False),
+        ('render again failed', 'render_again', (3,), 'failed', boom),
+        ('failure of the shown job', 'job_failure', ('job-1',), 'done', [('abel', 'No licence')]),
+        ('failure of another job', 'job_failure', ('job-2',), 'done', [('abel', 'No licence')]),
+        ('failure unreadable', 'job_failure', ('job-1',), 'failed', boom),
+        ('context of the shown job', 'job_context', ('job-1',), 'done', {'a': 1}),
+        ('context of another job', 'job_context', ('job-2',), 'done', {'a': 1}),
+        ('context failed', 'job_context', ('job-1',), 'failed', boom),
+        ('machine sampled', 'machine', (), 'done', 'stats'),
+        ('machine failed', 'machine', (), 'failed', boom),
+    ]
+
+
+def _handlers(win, kind: str, payload: tuple):
+    """The ``(on_done, on_failed)`` the window's call sites pair with the
+    background call ``kind`` (submitted with ``payload``)."""
+    if kind == 'farm_jobs':
+        return win._farm_jobs_read, win._farm_jobs_failed
+    if kind == 'farm_tasks':
+        return (lambda tasks: win._farm_tasks_read(payload[0], tasks)), win._deadline_read_failed
+    if kind == 'farm_reports':
+        return (lambda reports: win._farm_reports_read(('farm', *payload), reports)), win._deadline_read_failed
+    if kind == 'farm_report_text':
+        return (lambda text: win._report_text_read(payload[0], text)), win._deadline_read_failed
+    if kind == 'farm_control':
+        command, count = payload
+        return (lambda _output: win._farm_control_sent(command, count)), (lambda error: win._farm_control_failed(command, error))
+    if kind == 'farm_priority':
+        value, count = payload
+        return (lambda took: win._farm_priority_set(took, count)), (lambda error: win._farm_priority_failed(value, error))
+    if kind == 'presets':
+        return win._presets_read, win._presets_failed
+    if kind == 'farm_cleanup':
+        return win._farm_cleanup_done, win._farm_cleanup_failed
+    if kind == 'run_here':
+        return win._confirm_run_here, win._run_here_failed
+    if kind == 'render_again_plan':
+        return win._confirm_render_again, (lambda error: win._render_again_failed(error, started=False))
+    if kind == 'render_again':
+        return (lambda local: win._render_again_done(payload[0], local)), (lambda error: win._render_again_failed(error, started=True))
+    if kind == 'job_failure':
+        return (lambda errors: win._job_failure_read(payload[0], errors)), (lambda error: win._job_failure_unreadable(payload[0], error))
+    if kind == 'job_context':
+        return (lambda context: win._job_context_read(payload[0], context)), (lambda error: win._job_context_failed(payload[0], error))
+    if kind == 'machine':
+        return win._machine_sampled, win._machine_sample_failed
+    raise KeyError(kind)
+
+
+def deliver(win, kind: str, payload: tuple, outcome: str, value) -> None:
+    """Hand ``win`` the result of the background call ``kind`` submitted
+    with ``payload``: its value, or the error it raised."""
+    on_done, on_failed = _handlers(win, kind, payload)
+    (on_done if outcome == 'done' else on_failed)(value)
+
+
+def _dispatch_effects(app: QApplication, win, kind, payload, outcome, value) -> dict:
+    """What delivering one result does: the window methods it calls (with
+    their arguments) and the state it leaves, from a fixed starting state."""
+    from types import SimpleNamespace
+    from tumblepipe.farm.manager import window as mw
+    calls: list = []
+
+    def recorder(name):
+        return lambda *args, **kwargs: calls.append([name, repr(args), repr(sorted(kwargs.items()))])
+
+    names = ('_say', '_refresh_farm', '_refresh_local', '_show_tasks', '_show_reports', '_set_log_text',
+             '_update_status', '_update_details', '_sync_jobs', '_confirm_run_here', '_confirm_render_again')
+    saved = {name: getattr(win, name) for name in names}
+    saved_warning, saved_start = mw.QMessageBox.warning, mw.runner.ensure_running
+    for name in names:
+        setattr(win, name, recorder(name))
+    mw.QMessageBox.warning = staticmethod(lambda _parent, title, text: calls.append(['warning', title, text]))
+    mw.runner.ensure_running = lambda root=None: calls.append(['ensure_running'])
+    win._current_job = SimpleNamespace(id='job-1', source=rows.FARM)
+    win._log_key = ('farm', 'job-1', '1-2')
+    win._tasks = ['shown']
+    win._farm_loading, win._farm_rows, win._farm_error, win._farm_available = True, ['old'], 'old', True
+    win._presets, win._job_failures, win._contexts = [], {}, {}
+    win._contexts_loading = {'job-1', 'job-2'}
+    win._machine_loading, win._machine_stats = True, 'old'
+    win._farm_updated = ''
+    try:
+        deliver(win, kind, payload, outcome, value)
+    finally:
+        for name, method in saved.items():
+            setattr(win, name, method)
+        mw.QMessageBox.warning, mw.runner.ensure_running = saved_warning, saved_start
+    state = {
+        name: repr(getattr(win, name)) for name in (
+            '_farm_loading', '_farm_rows', '_farm_error', '_farm_available', '_presets',
+            '_job_failures', '_contexts', '_machine_loading', '_machine_stats',
+        )
+    }
+    state['_contexts_loading'] = repr(sorted(win._contexts_loading))
+    state['_farm_updated set'] = bool(win._farm_updated)
+    return {'calls': calls, 'state': state}
+
+
+def verify_dispatch(app: QApplication) -> None:
+    """Every background result reaches its own handler: for each kind the
+    window submits, done and failed, the methods it calls and the state it
+    leaves reproduce ``tests/data/farm_manager_dispatch.json``."""
+    from tumblepipe.farm.manager import window as mw
+    other = mw.ManagerWindow(None, rows.LOCAL)
+    pump(app, 0.5)
+    other._machine_timer.stop()
+    other._futures_timer.stop()
+    try:
+        got = {label: _dispatch_effects(app, other, *case) for label, *case in _dispatch_cases()}
+    finally:
+        other.close()
+        pump(app, 0.2)
+    if '--record-dispatch' in sys.argv:
+        DISPATCH_RECORD.write_bytes((json.dumps(got, indent=1, sort_keys=True) + '\n').encode('utf-8'))
+        print(f'  recorded {len(got)} cases')
+    want = json.loads(DISPATCH_RECORD.read_bytes())
+    for label in want:
+        check(f'dispatch: {label}', got.get(label) == want[label], json.dumps(got.get(label))[:400])
+    check('dispatch: every case recorded', sorted(got) == sorted(want), str(sorted(set(got) ^ set(want))))
+
+
 def verify_close(app: QApplication) -> None:
     """Closing releases the Show combo's model (``release_kept_references``),
     which emits its currentIndexChanged; up to 1.120.2 that reached
@@ -905,7 +1066,10 @@ def main() -> int:
     print('11. closing on "Show: This machine" raises nothing')
     verify_close(app)
 
-    if len(sys.argv) > 1:
+    print('12. every background result reaches its own handler')
+    verify_dispatch(app)
+
+    if len(sys.argv) > 1 and not sys.argv[1].startswith('--'):
         win.resize(1500, 900)
         pump(app, 0.5)
         win.grab().save(sys.argv[1])

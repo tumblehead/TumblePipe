@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 
-// What th_render, th_render_ids, th_render_scene and th_mesh_normals return
+// What th_render_scene and th_mesh_normals return
 // (src/lib.rs).
 constexpr int32_t TH_OK = 0;         // done
 constexpr int32_t TH_ERR_ARGS = 1;   // a null pointer, or an empty image
@@ -139,23 +139,16 @@ struct ThFrame {
                                 // over the opaque ones, as before
 };
 
-// TH_OK, TH_ERR_ARGS or TH_ERR_PANIC. `cache` may be null; one call at a time
-// per cache.
-int32_t th_render(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
-                  float* color, float* depth, ThCache const* cache);
-
-// th_render for a viewport. Also writes `ids` (may be null): per texel, row
-// 0 at the top, the index into `meshes` and the instance the texel's first
-// sample sees, -1 -1 for none, on the CPU and GPU paths. `cancel` (may be
-// null) is a 32-bit atomic read while drawing: set it non-zero from another
-// thread to give the frame up, and the call returns TH_CANCELLED having
-// written nothing.
-int32_t th_render_ids(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
-                      float* color, float* depth, int32_t* ids, uint32_t const* cancel,
-                      ThCache const* cache);
-
-// th_render_ids with basis curves and points as well. In `ids`, curves
-// view j is mesh_count + j, its instance as a mesh's.
+// Render `meshes` and `curves` (basis curves and points) into `color`
+// (width * height linear RGBA floats) and `depth` (width * height floats, may
+// be null), row 0 at the top. Writes `ids` (may be null): per texel, the
+// index of the view and the instance the texel's first sample sees, -1 -1
+// for none, on the CPU and GPU paths; meshes are 0..mesh_count, curves view
+// j is mesh_count + j. `cancel` (may be null) is a 32-bit atomic read while
+// drawing: set it non-zero from another thread to give the frame up, and
+// the call returns TH_CANCELLED having written nothing. `cache` may be null;
+// one call at a time per cache. TH_OK, TH_ERR_ARGS, TH_ERR_PANIC or
+// TH_CANCELLED.
 int32_t th_render_scene(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
                         ThCurvesView const* curves, uint32_t curves_count,
                         float* color, float* depth, int32_t* ids, uint32_t const* cancel,

@@ -1,20 +1,17 @@
 """Render a stage with husk (Karma XPU), split the AOVs and publish them."""
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import shutil
 import math
 import json
 import sys
-import os
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
 from tumblepipe.util.io import store_json
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
 from tumblepipe.pipe import review_events, slap_comp
@@ -50,28 +47,11 @@ def main(
     overwrite: bool = False
     ) -> int:
 
-    # Check that OCIO has been set
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
-    # Output receipt paths
-    receipt_paths = [
-        frame_file(receipt_path, frame_index)
-        for frame_index in render_range
-    ]
-
-    # Find missing output receipts. Into version (#92) renders frames
-    # whose receipts exist: a frame being repaired has one.
-    missing_receipt_paths = [
-        output_receipt_path
-        for output_receipt_path in receipt_paths
-        if overwrite or not output_receipt_path.exists()
-    ]
-
-    # Check if all receipts already exist
-    if len(missing_receipt_paths) == 0:
+    # Find missing output receipts
+    missing_receipt_paths = worker.missing_receipts(receipt_path, render_range, overwrite)
+    if not missing_receipt_paths:
         print('Output receipts already exist')
         return 0
 
@@ -80,10 +60,7 @@ def main(
     itilestitch = ITileStitch()
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Temp paths
         temp_frame_path = temp_path / 'render' / 'render.####.exr'
@@ -255,9 +232,8 @@ def main(
             })
 
     # Check if output receipts were generated
-    for receipt_path in receipt_paths:
-        if receipt_path.exists(): continue
-        return error(f'Output receipt not found: {receipt_path}')
+    for current_receipt_path in worker.missing_receipts(receipt_path, render_range):
+        return error(f'Output receipt not found: {current_receipt_path}')
     review_events.announce_written(output_paths.values())
 
     # Done

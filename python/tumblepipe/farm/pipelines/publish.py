@@ -11,7 +11,7 @@ Config: ``specs.publish``.
 from pathlib import Path
 
 from tumblepipe.api import get_user_name, path_str
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import publish as publish_job
@@ -20,7 +20,6 @@ from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import publish as publish_spec
 from tumblepipe.pipe.paths import (
     latest_complete_hip_file_path,
-    latest_export_path,
     latest_hip_file_path,
 )
 from tumblepipe.util.uri import Uri
@@ -35,17 +34,6 @@ def is_submissable(entity_uri: Uri, department_name: str) -> bool:
     if hip_path is None:
         return False
     return hip_path.exists()
-
-
-def is_out_of_date(entity_uri: Uri, channel_name: str, department_name: str) -> bool:
-    """Whether the latest export is older than the latest workfile."""
-    hip_path = latest_hip_file_path(entity_uri, department_name)
-    export_path = latest_export_path(entity_uri, channel_name, department_name)
-    if export_path is None:
-        return True
-    if not export_path.exists():
-        return True
-    return hip_path.stat().st_mtime > export_path.stat().st_mtime
 
 
 def bundle_workfile(workfile_path: Path, department_name: str, paths: dict) -> Path:

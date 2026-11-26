@@ -25,14 +25,12 @@ exports read at the frames that render wrote (``cops.slap_comp``), and
 records those as what it read.
 """
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import json
-import os
 
 import hou
 
-from tumblepipe.api import path_str, api
+from tumblepipe.api import path_str, project_temp_dir
 from tumblepipe.apps import exr
 from tumblepipe.util.io import load_json_if_exists, store_json
 from tumblepipe.pipe import comp
@@ -42,7 +40,7 @@ from tumblepipe.pipe.houdini import playbar
 from tumblepipe.farm import worker
 from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
 from tumblepipe.farm.specs import composite as composite_spec
-from tumblepipe.apps.deadline import log_progress
+from tumblepipe.apps.app import log_progress
 from tumblepipe.farm.worker import ensure_dir, error, headline
 
 
@@ -305,11 +303,7 @@ def main(
     follows: list | None = None
     ) -> int:
 
-    # Check that OCIO has been set
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
     # Open the input file
     if not input_path.exists():
@@ -384,10 +378,7 @@ def main(
     report_uncovered(entity_uri, reads, render_range,
                      () if renders else held_channels(entity_uri))
 
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # {frame: {layer: (temp frame, output frame)}}
         written = {}

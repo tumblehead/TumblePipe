@@ -23,7 +23,7 @@ Checks:
  6. A filter hides rows, and a header toggle then only reaches visible ones.
  7. Select stale ticks exactly the stale and never-done cells.
  8. A ticked row resolves to exactly its ticked publish departments
-    (``pub_departments``, no ``pub_department``) and its own frame range.
+    (``pub_departments``) and its own frame range.
  9. A real staged stage collapses for a playblast in this interpreter — the
     snapshot the background runner takes when nothing is published first.
 10. The background runner starts, runs in Houdini's Python, and reports a
@@ -106,6 +106,7 @@ def main() -> int:
     from tumblepipe.asset_browser import submit_jobs_dialog as mod
     from tumblepipe.farm.submit import plan as submit_plan
     from tumblepipe.farm.pipelines import preview as _preview
+    from tumblepipe.farm.specs.playblast import DEFAULT_LOOK
     from tumblepipe.pipe.paths import get_latest_staged_file_path
 
     results: list[bool] = []
@@ -145,7 +146,7 @@ def main() -> int:
     open_dept = renderable[-1] if renderable else None
     # The grid internals live on the tab's pane; showing, sizing and closing
     # are the dialog's.
-    win = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots", department=open_dept)
+    win = mod.SubmitJobsDialog([shot], "shots", department=open_dept)
     dlg = win._panes["shots"]
     uris = dlg._uris
     check("1. rows are the context's terminal entities",
@@ -265,7 +266,6 @@ def main() -> int:
         props = dlg._props[target]
         check("8. a row publishes exactly its ticked departments",
               settings.get("pub_departments") == departments
-              and "pub_department" not in settings
               and settings.get("publish") and settings.get("render")
               and not settings.get("playblast"),
               f"{settings.get('pub_departments')}")
@@ -371,7 +371,7 @@ def main() -> int:
     # ── 13: how the Render quick action opens it ─────────
     farm_dept = publish[-1]
     farm_win = mod.SubmitJobsDialog(
-        [shot], [shot.segments[-1]], "shots", department=farm_dept,
+        [shot], "shots", department=farm_dept,
     )
     farm = farm_win._panes["shots"]
     check("13. from a workfile only its Render cell is ticked",
@@ -379,7 +379,7 @@ def main() -> int:
           and [k for k, b in farm._sections.items() if not b.isHidden()] == [grid.RENDER],
           f"{sorted(farm._ticks)}")
     farm_win.reject()
-    bare_win = mod.SubmitJobsDialog([], [], "shots")
+    bare_win = mod.SubmitJobsDialog([], "shots")
     bare = bare_win._panes["shots"]
     check("13. with no workfile every row is listed and nothing ticked",
           not bare._ticks and set(bare._uris) >= {str(u) for u in shots},
@@ -390,7 +390,7 @@ def main() -> int:
     from PySide6.QtCore import QEvent
     from PySide6.QtWidgets import QWidget
     main_window = QWidget()  # stands in for hou.qt.mainWindow()
-    owned = mod.SubmitJobsDialog([], [], "shots", parent=main_window, tick_kinds=())
+    owned = mod.SubmitJobsDialog([], "shots", parent=main_window, tick_kinds=())
     owned.show()
     app.processEvents()
     owned.reject()
@@ -405,7 +405,7 @@ def main() -> int:
     from tumblepipe.asset_browser.farm_submit_ui import ReviewSheet
     real_problem = deadline_mod.deadline_setup_problem
     deadline_mod.deadline_setup_problem = lambda environ=None: None
-    confirm_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    confirm_win = mod.SubmitJobsDialog([], "shots", tick_kinds=())
     confirm_dlg = confirm_win._panes["shots"]
     wait_for_scan(confirm_dlg)
     preview_shot = next(
@@ -467,7 +467,7 @@ def main() -> int:
         asset_renderable = mod._list_dept_names("assets", only_publishable=False, only_renderable=True)
         asset_dept = asset_renderable[-1] if asset_renderable else None
         tabs_win = mod.SubmitJobsDialog(
-            [asset], [asset.segments[-1]], "assets", department=asset_dept,
+            [asset], "assets", department=asset_dept,
             tick_kinds=(grid.PUBLISH,),
         )
         asset_ticks = {
@@ -529,7 +529,7 @@ def main() -> int:
         tabs_win.reject()
 
     # ── 18: collapsing columns ────────────────────────────
-    col_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    col_win = mod.SubmitJobsDialog([], "shots", tick_kinds=())
     col = col_win._panes["shots"]
     wait_for_scan(col)
     empty = grid.empty_columns(col._uris, col._columns, col._states)
@@ -573,7 +573,7 @@ def main() -> int:
 
     # ── 19: what the window remembers ─────────────────────
     from tumblepipe.asset_browser import prefs as prefs_mod
-    mem_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    mem_win = mod.SubmitJobsDialog([], "shots", tick_kinds=())
     mem = mem_win._panes["shots"]
     priority = mem._fields["render_priority"]
     priority.widget.setValue(37)
@@ -592,7 +592,7 @@ def main() -> int:
     record = stored["tabs"][mod.remembered.scope(mod._project_key(), "shots")]
     record["pinned"]["pb_department"] = "no_such_department"
     prefs_mod.update_prefs(farm_submit=stored)
-    again_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    again_win = mod.SubmitJobsDialog([], "shots", tick_kinds=())
     again = again_win._panes["shots"]
     check("19. a pinned setting comes back pinned",
           again._fields["render_priority"].pinned and again._fields["render_priority"].value() == 37)
@@ -609,7 +609,7 @@ def main() -> int:
     again_win.reject()
 
     # ── 20: the Channels field is a dropdown, not a text field ──
-    menu_win = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots")
+    menu_win = mod.SubmitJobsDialog([shot], "shots")
     menu_win.show()
     app.processEvents()
     channels = menu_win._panes["shots"]._rnd_channels
@@ -638,6 +638,7 @@ def main() -> int:
             try:
                 name = _preview.collapse_playblast_input(
                     staged, renderable[-1], Path(tmp), paths,
+                    light=DEFAULT_LOOK["light"],
                 )
                 text = (Path(tmp) / name).read_text(encoding="utf-8")
                 ok = "subLayers" in text and _preview.PLAYBLAST_INPUT_NAME == name
@@ -684,7 +685,7 @@ def main() -> int:
     from PySide6.QtCore import QEvent
     from PySide6.QtGui import QKeyEvent
     from PySide6.QtWidgets import QSpinBox as _Spin
-    enter_win = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots", department=open_dept)
+    enter_win = mod.SubmitJobsDialog([shot], "shots", department=open_dept)
     enter_dlg = enter_win._panes["shots"]
     wait_for_scan(enter_dlg)
     enter_win.show()
@@ -708,7 +709,7 @@ def main() -> int:
     enter_win.reject()
 
     # ── 24: Run on This machine shows the comp as one task (#44) ──
-    run_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    run_win = mod.SubmitJobsDialog([], "shots", tick_kinds=())
     run_dlg = run_win._panes["shots"]
     combo = run_win._backend
     combo.setCurrentIndex(combo.findData("local"))
@@ -726,7 +727,7 @@ def main() -> int:
     pipe_edits.list_edits = lambda *a, **k: ["cut"]
     pipe_edits.published_versions = lambda *a, **k: ["v0001"]
     try:
-        edit_win = mod.SubmitJobsDialog([], [], grid.EDITS)
+        edit_win = mod.SubmitJobsDialog([], grid.EDITS)
         edit_pane = edit_win._panes[grid.EDITS]
         item = next(iter(edit_pane._items.values()))
         combo = edit_win._backend
@@ -748,11 +749,11 @@ def main() -> int:
     if not had_hou:
         sys.modules["hou"] = types.SimpleNamespace(qt=types.SimpleNamespace(mainWindow=lambda: None))
     try:
-        scene_mod.open_submit_jobs_dialog([shot], [shot.segments[-1]], "shots")
+        scene_mod.open_submit_jobs_dialog([shot], "shots")
         first = scene_mod._submit_dialog
         first.move(first.x() + 37, first.y() + 23)
         where = first.geometry()
-        scene_mod.open_submit_jobs_dialog([], [], "shots", tick_kinds=())
+        scene_mod.open_submit_jobs_dialog([], "shots", tick_kinds=())
         second = scene_mod._submit_dialog
         app.processEvents()
         open_windows = [w for w in QApplication.topLevelWidgets()
@@ -761,7 +762,7 @@ def main() -> int:
               second is not first and open_windows == [second] and second.geometry() == where,
               f"{len(open_windows)} open")
         second.is_submitting = lambda: True
-        scene_mod.open_submit_jobs_dialog([], [], "shots", tick_kinds=())
+        scene_mod.open_submit_jobs_dialog([], "shots", tick_kinds=())
         third = scene_mod._submit_dialog
         app.processEvents()
         check("23. one still sending a submission keeps its window",

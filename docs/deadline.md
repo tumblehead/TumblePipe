@@ -1,7 +1,7 @@
 # Deadline and the render farm
 
-TumblePipe includes a `tumblepipe.apps.deadline` module for submitting jobs
-to [Thinkbox Deadline](https://www.awsthinkbox.com/deadline), and custom
+TumblePipe includes a job model (`tumblepipe.farm.job`) and a
+`tumblepipe.apps.deadline` module for submitting jobs to [Thinkbox Deadline](https://www.awsthinkbox.com/deadline), and custom
 Deadline plugins for running its Python farm tasks on workers with the same
 source and environment the job was submitted with.
 
@@ -138,10 +138,10 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   job (version from `HpmVersion` → `HPM_VERSION` env → the plugin's pinned
   default, `v0.44.0`). No manual install needed. TumblePipe's jobs send
-  `HpmVersion` (`apps.deadline.HPM_VERSION`, `v0.44.0`): its `hpm.toml`
+  `HpmVersion` (`farm.job.HPM_VERSION`, `v0.44.0`): its `hpm.toml`
   declares script `app`/`icon` fields, which an hpm before 0.44.0 refuses, so
   a job never runs under an older one. Bump the plugin's `DEFAULT_HPM_VERSION`,
-  `apps.deadline.HPM_VERSION`, `farm/local/hpm.py`'s `DEFAULT_VERSION` and
+  `farm.job.HPM_VERSION`, `farm/local/hpm.py`'s `DEFAULT_VERSION` and
   `.ci/release.env`'s `HPM_VERSION` together, so CI, the local farm and every
   worker run the same hpm.
 - Each job carries an `hpm.toml` built from the **project's own** `hpm.toml`:
@@ -166,11 +166,13 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 ## Submitting a job from TumblePipe
 
-`tumblepipe.apps.deadline` is a generic `deadlinecommand` wrapper:
+`tumblepipe.farm.job` is the job model both backends share, and
+`tumblepipe.apps.deadline` a generic `deadlinecommand` wrapper:
 
-- `Job` — one Deadline job (a package script and its arguments).
-- `Batch` — a named collection of jobs with optional dependencies.
-- `Deadline` — the submission client.
+- `Job` (`farm.job`) — one farm job (a package script and its arguments).
+- `Batch` (`farm.job`) — a named collection of jobs with optional dependencies.
+- `Deadline` (`apps.deadline`) — the submission client; the local farm's
+  `LocalFarm` (`farm.local.backend`) takes the same batch.
 
 It is intentionally HPM-agnostic. A farm job is built by
 `tumblepipe.farm.deadline.farm_job`, which makes a `Job` that runs one of the
@@ -182,7 +184,8 @@ manifest into the shared job dir and hands the plugin only its path.
 ```python
 from pathlib import Path
 
-from tumblepipe.apps.deadline import Batch, Deadline
+from tumblepipe.apps.deadline import Deadline
+from tumblepipe.farm.job import Batch
 from tumblepipe.farm.deadline import farm_job, run_once
 
 # The package must be an installed HPM package (under

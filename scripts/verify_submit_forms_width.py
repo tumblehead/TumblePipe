@@ -60,7 +60,19 @@ def fits(pane, section) -> tuple[bool, str]:
 
 
 def main() -> int:
-    win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    # Run on: This machine before the Shots tab is first shown: the pane
+    # built then shows the local comp batch, as the panes built earlier do.
+    on_assets = mod.SubmitJobsDialog([], "assets", tick_kinds=())
+    on_assets._backend.setCurrentIndex(on_assets._backend.findData("local"))
+    on_assets._show_context("shots")
+    settle()
+    shots = on_assets._pane("shots")
+    check("0. a tab first shown after Run on changed follows it",
+          not shots._comp_local_batch.isHidden() and shots._comp_batch.isHidden(),
+          f"local {not shots._comp_local_batch.isHidden()}, farm {not shots._comp_batch.isHidden()}")
+    on_assets.reject()
+
+    win = mod.SubmitJobsDialog([], "shots", tick_kinds=())
     win.show()
     settle()
     for context in ("shots", "assets"):

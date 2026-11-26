@@ -289,6 +289,12 @@ def get_group_in(store: JsonConfigStore, group_uri: Uri) -> Group | None:
         if properties is None: return None
         return _group(store, group_uri, properties)
 
+
+def members_in(store: JsonConfigStore, group_uri: Uri) -> list[Uri]:
+    """The members of the Multi at ``group_uri``; none when it is gone."""
+    group = get_group_in(store, group_uri)
+    return list(group.members) if group is not None else []
+
 def _list_groups(store: JsonConfigStore, context: str) -> list[Group]:
     context_uri = GROUPS_URI / context
     entities = store.list_entities(context_uri)
@@ -578,6 +584,10 @@ def remove_department(group_uri: Uri, department: str):
 
 def get_group(group_uri: Uri) -> Group | None:
     return get_group_in(api.config, group_uri)
+
+
+def members(group_uri: Uri) -> list[Uri]:
+    return members_in(api.config, group_uri)
 
 
 def list_groups(context: str) -> list[Group]:

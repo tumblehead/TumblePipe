@@ -33,12 +33,11 @@ Farm Submit with the shot's Render and Comp ticked.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import TemporaryDirectory
 import shutil
 
 import hou
 
-from tumblepipe.api import path_str, get_user_name, api
+from tumblepipe.api import path_str, get_user_name, api, project_temp_dir
 from tumblepipe.config.channels import list_channels
 from tumblepipe.farm.specs import preview_frames
 from tumblepipe.util.uri import Uri
@@ -47,6 +46,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.farm_node import FarmNode
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode, FrameRangeSource
+from tumblepipe.pipe.houdini.nodes import button
 
 TYPE_NAME = 'export_comp'
 
@@ -493,10 +493,8 @@ def submit(node: ExportComp, submits: list[ShotSubmit] | None = None):
     )
     hou.hipFile.save()
     workfile_path = Path(hou.hipFile.path())
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents = True, exist_ok = True)
     for shot_submit in submits:
-        with TemporaryDirectory(dir = path_str(root_temp_path)) as temp_dir:
+        with project_temp_dir() as temp_dir:
             input_path = Path(temp_dir) / 'workfile.hip'
             shutil.copyfile(workfile_path, input_path)
             relative_input_path = input_path.relative_to(temp_dir)
@@ -523,23 +521,23 @@ def on_loaded(raw_node):
     node.refresh_warning()
 
 
+@button('Submit Composite')
 def submit_kwargs(kwargs):
     from tumblepipe.pipe.houdini.ui import farm_submit
     node = ExportComp(kwargs['node'])
-    with ns.node_errors_as_message('Submit Composite'):
-        try:
-            submits = plan_submits(node)
-        except NoRenderToComp as error:
-            if not hou.isUIAvailable(): raise
-            _offer_farm_submit(error)
-            return
-        if not _confirm_unread(submits): return
-        shots = len(submits)
-        farm_submit.submit(
-            'the composite' if shots == 1 else f'the composites of {shots} shots',
-            'Submit Composite',
-            lambda: submit(node, submits),
-        )
+    try:
+        submits = plan_submits(node)
+    except NoRenderToComp as error:
+        if not hou.isUIAvailable(): raise
+        _offer_farm_submit(error)
+        return
+    if not _confirm_unread(submits): return
+    shots = len(submits)
+    farm_submit.submit(
+        'the composite' if shots == 1 else f'the composites of {shots} shots',
+        'Submit Composite',
+        lambda: submit(node, submits),
+    )
 
 
 def _offer_farm_submit(error: NoRenderToComp):
@@ -562,17 +560,19 @@ def _offer_farm_submit(error: NoRenderToComp):
     )
 
 
+@button('Open Location')
 def open_location(kwargs):
     node = ExportComp(kwargs['node'])
-    with ns.node_errors_as_message('Open Location'):
-        node.open_location()
+    node.open_location()
 
 
+@button('Export Comp')
 def select_entity(kwargs):
     node = ExportComp(kwargs['node'])
     if node.pick_entity('Select Shot', contexts=('shots',)):
         node.refresh_warning()
 
 
+@button('Export Comp')
 def refresh(kwargs):
     ExportComp(kwargs['node']).refresh_warning()

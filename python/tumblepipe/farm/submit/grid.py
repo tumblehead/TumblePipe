@@ -132,8 +132,7 @@ def publish_state(
 ) -> str:
     """A department's publish cell, from its newest workfile and export.
 
-    The same rule as ``_publish.is_out_of_date``: stale when the workfile
-    was saved after the latest export.
+    Stale when the workfile was saved after the latest export.
 
     ``shared`` means the workfile is a Multi's, not the entity's own. A
     Multi covers every member for its departments, but its workfile need
@@ -523,15 +522,11 @@ def unpublished_upstream(
 
 
 def finish_row_settings(settings: dict, publish_departments: Sequence[str]) -> dict:
-    """The resolver's settings for one row, turned into the grid's publish.
-
-    The resolver still emits the old form's ``pub_department`` ("up to");
-    the grid replaces it with the explicit ``pub_departments`` list, which
-    ``batch_submit`` publishes exactly.
-    """
+    """The resolver's settings for one row, with the grid's publish: the
+    ticked departments (``pub_departments``), which ``batch_submit``
+    publishes exactly."""
     out = dict(settings)
-    out.pop('pub_department', None)
-    if out.get('publish'):
+    if out['publish']:
         out['pub_departments'] = list(publish_departments)
     return out
 
@@ -834,6 +829,27 @@ def render_disabled(
         **resolve.step_disabled(step),
         **resolve.frame_list_disabled(frame_list, target),
     }
+
+
+def submit_refusal(rows, render_mode: str | None, channels) -> tuple[str, str] | None:
+    """``(title, text)`` of why Submit cannot go ahead with the ticked
+    ``rows`` (:class:`ResolvedRow`), the Range checkboxes' ``render_mode``
+    and the checked render ``channels``; None when it can. Before the
+    review, so the artist is not walked through rows that cannot go."""
+    if not rows:
+        return "Nothing ticked", "Tick at least one cell before submitting."
+    renders = any(row.settings.get('render') for row in rows)
+    if renders and render_mode is None:
+        return (
+            "No render range",
+            "Tick Preview, Full range or both in the Render settings before submitting.",
+        )
+    if renders and not channels:
+        return (
+            "No channel to render",
+            "Check at least one channel in the Render settings before submitting.",
+        )
+    return None
 
 
 @dataclass(frozen=True)

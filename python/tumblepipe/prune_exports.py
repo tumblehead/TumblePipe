@@ -52,6 +52,7 @@ from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import ProjectRoots, project_roots
 from tumblepipe.cleanup import hip
 from tumblepipe.cleanup.hip import CONTEXTS
+from tumblepipe.util.text import human_bytes
 
 DEFAULT_KEEP = 3
 LOGS_DIR = ('other', 'logs')
@@ -426,15 +427,6 @@ def apply(plan: Plan, log_path: Path) -> tuple[int, int, list[str]]:
 # ── command line ───────────────────────────────────────────────────────────
 
 
-def human(count: int) -> str:
-    size = float(count)
-    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
-        if size < 1024 or unit == 'TB':
-            return f'{int(size)} B' if unit == 'B' else f'{size:.1f} {unit}'
-        size /= 1024
-    return f'{count} B'
-
-
 def summary(plan: Plan) -> list[str]:
     """The listing, as lines: per reason, then per entity what goes."""
     lines = [f'{len(plan.verdicts)} export version(s) under {plan.export_path}']
@@ -443,7 +435,7 @@ def summary(plan: Plan) -> list[str]:
         by_reason[(verdict.prune, verdict.reason)].append(verdict)
     for (prune, reason), group in sorted(by_reason.items(), key=lambda kv: (not kv[0][0], kv[0][1])):
         size = sum(v.version.size for v in group)
-        lines.append(f'  {"prune" if prune else "keep ":<5}  {len(group):>6} version(s)  {human(size):>10}  {reason}')
+        lines.append(f'  {"prune" if prune else "keep ":<5}  {len(group):>6} version(s)  {human_bytes(size):>10}  {reason}')
     lines.append(f'Read {plan.hips_read} latest workfile(s) for pinned versions.')
     if plan.hips_unreadable:
         lines.append(
@@ -457,15 +449,14 @@ def summary(plan: Plan) -> list[str]:
         lines.append('')
         lines.append('To prune, by entity:')
         for entity, group in sorted(per_entity.items()):
-            lines.append(f'  {entity:<40} {len(group):>4} version(s)  {human(sum(v.version.size for v in group)):>10}')
+            lines.append(f'  {entity:<40} {len(group):>4} version(s)  {human_bytes(sum(v.version.size for v in group)):>10}')
     for error in plan.errors[:20]:
         lines.append(f'  ! {error}')
     return lines
 
 
 def _export_path(project: Path) -> Path:
-    root = project_roots(project).get('export')
-    return root.path if root is not None else project / 'export'
+    return project_roots(project).get('export').path
 
 
 def log_path_for(plan: Plan) -> Path:
@@ -501,14 +492,14 @@ def main(argv: list[str] | None = None) -> int:
     prunable = plan.prunable
     if not prunable:
         return 0
-    size = human(sum(v.version.size for v in prunable))
+    size = human_bytes(sum(v.version.size for v in prunable))
     if not args.apply:
         print(f'\nNothing deleted. Run again with --apply to delete the '
               f'{len(prunable)} prunable version(s) ({size}).')
         return 0
     log_path = log_path_for(plan)
     removed, removed_bytes, errors = apply(plan, log_path)
-    print(f'\nDeleted {removed} version(s), {human(removed_bytes)}. Logged to {log_path}.')
+    print(f'\nDeleted {removed} version(s), {human_bytes(removed_bytes)}. Logged to {log_path}.')
     for error in errors:
         print(f'  {error}')
     return 1 if errors else 0

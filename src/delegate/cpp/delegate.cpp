@@ -20,7 +20,7 @@
 //                 (src/lights.rs) unless th:lighting asks for the headlight.
 //   ThRenderPass  gathers the visible meshes for the pass's render tags
 //                 (purposes) and the camera, and calls the Rust core
-//                 (th_render) for colour and depth.
+//                 (th_render_scene) for colour, depth and ids.
 //
 // Each mesh hands the core a key and a version (bumped by every rebuild),
 // and the delegate a ThCache, so the GPU path keeps unchanged meshes on the
@@ -344,7 +344,7 @@ struct _Image
 
 static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t)
                   && std::atomic<uint32_t>::is_always_lock_free,
-              "th_render_ids reads the cancel flag as a plain 32-bit atomic");
+              "th_render_scene reads the cancel flag as a plain 32-bit atomic");
 
 // Draw `job` through `frame` into `out` (sized to the frame). The core's
 // status: TH_OK, TH_CANCELLED, or an error.

@@ -1,6 +1,7 @@
 
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import import_asset as lop_import_asset
+from tumblepipe.pipe.houdini.nodes import button
 
 class ImportAsset(ns.Node):
     """SOP-side wrapper around th::Sop/import_asset::1.0.
@@ -44,11 +45,13 @@ def on_created(raw_node):
     # otherwise.
     node.embedded()._update_labels()
 
+@button('Import Asset')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportAsset(raw_node)
     node.execute()
 
+@button('Import Asset')
 def select(kwargs):
     """Entity button: pick the asset, then import it."""
     node = ImportAsset(kwargs['node'])

@@ -72,7 +72,7 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Protocol, Sequence
 
 from PySide6.QtCore import QEvent, QPointF, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import (
@@ -91,6 +91,7 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
+from tumblepipe.config import groups as config_groups
 from tumblepipe.farm.submit import grid as grid
 from tumblepipe.farm.submit import remembered
 from tumblepipe.util.qt_lifetime import release_kept_references
@@ -99,6 +100,7 @@ from tumblepipe.farm.submit import stale as stale_words
 from tumblepipe.farm.submit import status as farm_status
 from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
+from tumblepipe.farm.submit.settings import FROM_SCENE_TEXT, PER_ENTITY_TEXT
 from tumblepipe.farm.specs import submission
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
@@ -113,7 +115,7 @@ from tumblepipe.farm.specs.playblast import (
 )
 
 from .farm_submit_ui import (
-    EDIT_KIND, KIND_COLOURS, KIND_FILLS, FolderTabBar, NoticeCard, Overlay,
+    CURRENT_COLOUR, STALE_COLOUR, EDIT_KIND, KIND_COLOURS, KIND_FILLS, FolderTabBar, NoticeCard, Overlay,
     ReviewSheet, Section, SubmissionView,
 )
 from .frame_timeline import FrameTimeline
@@ -123,15 +125,6 @@ from tumblepipe.farm.specs import repair as repair_spec
 
 log = logging.getLogger(__name__)
 
-# Shown by an unpinned widget whose checked entities disagree. The angle
-# brackets keep it from reading as a department or pool literally named
-# "per entity".
-PER_ENTITY_TEXT = "⟨per entity⟩"
-
-# Shown by an unpinned override field (samples, motion blur, DOF): nothing is
-# sent, so the render uses whatever the scene's render settings author.
-FROM_SCENE_TEXT = "⟨from scene⟩"
-
 # Shown by an unset comp frame: nothing is sent, so the comp follows the
 # render's range, else what the renders on disk cover, else the shot's
 # (``farm.specs.submission.comp_follows``, read alike by the dialog and the farm).
@@ -140,8 +133,6 @@ FULL_RANGE_TEXT = "⟨full range⟩"
 # Cell colours. The theme's own tokens where it has one; amber and green for
 # the two states that must be told apart at a glance (they also differ in
 # lightness, not only hue).
-STALE_COLOUR = "#f0a030"
-CURRENT_COLOUR = "#2bae86"
 NEVER_COLOUR = "#c8c8cc"
 DIM_COLOUR = "#5c5c62"
 TICK_OUTLINE = "#3fb58f"
@@ -149,7 +140,6 @@ RULE_COLOUR = "#3a3a3a"
 ZEBRA_COLOUR = "#1f1f1f"
 BAND_COLOUR = "#262626"
 WARNING_COLOUR = STALE_COLOUR
-ERROR_COLOUR = "#e05a4f"
 
 # The open workfile's row (``grid.active_rows``): the theme's highlight wash
 # over the whole row and its accent as a bar down the row's left edge, both
@@ -486,14 +476,6 @@ def _list_groups(context: str) -> list[tuple[str, list[object]]]:
     return sorted(groups, key=lambda item: item[0])
 
 
-def _group_members(group_uri) -> list[object]:
-    """Member URIs of the Multi at ``group_uri``; empty when it is gone."""
-    from tumblepipe.api import default_client
-    from tumblepipe.config.groups import get_group_in
-    group = get_group_in(default_client().config, group_uri)
-    return list(group.members) if group is not None else []
-
-
 def _box(painter: QPainter, rect: QRect, state: str, kind: str | None = None) -> None:
     """Draw a tri-state checkbox (``on`` / ``mixed`` / ``off``) in ``rect``,
     filled in ``kind``'s colour when it ticks one kind's cells, else the accent."""
@@ -552,7 +534,7 @@ class _RefreshingComboBox(QComboBox):
         try:
             self._refresh()
         except Exception:
-            logging.exception('Could not list the versions to render into')
+            log.exception('Could not list the versions to render into')
         super().showPopup()
 
 
@@ -1885,14 +1867,10 @@ class _ContextPane(QWidget):
     def _cut(self, uri: str, key: str) -> str | None:
         """This row's preview cut: the pinned department, else the entity's."""
         entry = self._fields.get(key)
-        if entry is not None and entry.pinned:
-            value = entry.value()
-            if value is not resolve.MIXED:
-                return value
-        value = resolve.entity_value(
-            resolve.FIELDS_BY_KEY[key], self._props.get(uri, {}), self._fallbacks,
+        pinned = entry.value() if entry is not None and entry.pinned else resolve.MIXED
+        return resolve.row_value(
+            resolve.FIELDS_BY_KEY[key], pinned, self._props.get(uri, {}), self._fallbacks,
         )
-        return None if value is resolve.REQUIRED else value
 
     def _drain_scans(self) -> None:
         """Main-thread poll: resolve a chunk of probes, apply finished scans."""
@@ -2000,6 +1978,7 @@ class _ContextPane(QWidget):
         else:
             self._comp_copy_edit = None
             self._comp_preview = None
+            self._comp_preview_timeline = None
         self._no_settings = QLabel(
             "Tick a cell to see its settings.\n\nHover a column's header for "
             "what it does and what its marks mean."
@@ -2798,51 +2777,33 @@ class _ContextPane(QWidget):
         With rows of different ranges a timeline shows their union and
         says so; each row still reads the text against its own range (the
         Warnings column names what it drops)."""
-        timelines = (
-            getattr(self, '_rnd_preview_timeline', None),
-            getattr(self, '_rnd_frame_timeline', None),
-        )
-        noun = getattr(self, '_noun', ('shot', 'shots'))[1]
+        noun = self._noun[1]
+        studio = None
         if self._context == 'assets':
             frames = turntable.farm_frames()
-            view = frame_selection.View(
-                frames.first, frames.last, "the turntable's frames",
-            )
-            render_step = frames.step
-        else:
-            spans = [submission.rolled_range(r.settings) for r in rows if r.settings.get('render')]
-            view = frame_selection.view(spans, noun)
-            # The Step: the Preview frames timeline picks only frames on it,
-            # the Frame list's draws the frames each range renders.
-            render_step = self._render_step()
-        for timeline in timelines:
-            if timeline is not None:
-                timeline.set_view(view, render_step)
-        if timelines[0] is not None:
-            context = frame_selection.read(
-                getattr(self, '_rnd_frame_list', None) and self._rnd_frame_list.text(),
-                frame_selection.RANGES,
-            ).ranges
-            timelines[0].set_context(context if self._context != 'assets' else ())
-        comp_timeline = getattr(self, '_comp_preview_timeline', None)
-        if comp_timeline is None:
+            studio = (frames.first, frames.last, frames.step)
+        render = frame_selection.render_timelines(
+            [row.settings for row in rows], noun, self._render_step(),
+            self._rnd_frame_list.text(), studio,
+        )
+        # The Step: the Preview frames timeline picks only frames on it,
+        # the Frame list's draws the frames each range renders.
+        for timeline in (self._rnd_preview_timeline, self._rnd_frame_timeline):
+            timeline.set_view(render.view, render.step)
+        self._rnd_preview_timeline.set_context(render.shaded)
+        if self._comp_preview_timeline is None:
             return
-        spans, steps = [], set()
+        comps = []
         for row in rows:
-            settings = row.settings
-            if not settings.get('comp'):
+            if not row.settings.get('comp'):
                 continue
             status = self._statuses.get(row.uri)
             frames = resolve.comp_frames(
-                self._props.get(row.uri, {}), settings,
+                self._props.get(row.uri, {}), row.settings,
                 None if status is None else status.rendered,
             )
-            spans.append(None if frames is None else frames[0])
-            step = settings.get('comp_step')
-            steps.add(step if isinstance(step, int) and step > 0 else 1)
-        comp_timeline.set_view(
-            frame_selection.view(spans, noun), steps.pop() if len(steps) == 1 else 1,
-        )
+            comps.append((None if frames is None else frames[0], row.settings))
+        self._comp_preview_timeline.set_view(*frame_selection.comp_timeline(comps, noun))
 
     def _pool(self, key: str) -> QWidget:
         """A Pool field as the project's pools in a dropdown, the way a th::
@@ -2959,16 +2920,16 @@ class _ContextPane(QWidget):
         override = entry.value() if entry.pinned else None
         if override is resolve.MIXED:
             override = None
-        configured = {
-            key[0]: render_camera.configured_camera(self._props.get(key[0], {}))
+        shots = [
+            render_camera.Shot(
+                self._uri_objects[key[0]].segments[-1], key[1],
+                render_camera.configured_camera(self._props.get(key[0], {})),
+                self._cameras.get(key),
+            )
             for key in keys
-        }
-        known = [self._cameras[k] for k in keys if k in self._cameras]
-        complete = bool(keys) and len(known) == len(keys)
-        found_list = known if complete else []
-        options = render_camera.camera_options(
-            [c for c in configured.values() if c], found_list,
-        )
+        ]
+        shown = render_camera.summary(shots, override)
+        options = shown.options
         current = box.currentText()
         if [box.itemText(i) for i in range(box.count())] != options:
             box.blockSignals(True)
@@ -2978,34 +2939,12 @@ class _ContextPane(QWidget):
                 box.setEditText(current)
             finally:
                 box.blockSignals(False)
-        if not complete:
-            box.lineEdit().setPlaceholderText("Reading…" if keys else FROM_SCENE_TEXT)
+        box.lineEdit().setPlaceholderText(shown.placeholder)
+        if not shown.read:
             box.setToolTip("")
             self._rnd_camera_form_note("")
-            self._show_scene_values(keys, [])  # back to plain ⟨from scene⟩
+            self._show_scene_values([])  # back to plain ⟨from scene⟩
             return
-        lines, scene, notes = [], set(), []
-        for key, found in zip(keys, known):
-            name = self._uri_objects[key[0]].segments[-1]
-            if found.error:
-                lines.append(f"{name}: not read  {found.error}")
-                continue
-            camera, source = render_camera.effective_camera(None, found, configured[key[0]])
-            scene.add(camera)
-            lines.append(
-                f"{name}: {camera}  ({source}, {key[1]})" if camera
-                else f"{name}: none named"
-            )
-            note = render_camera.camera_note(override, found, configured[key[0]])
-            if note:
-                notes.append(note if len(keys) == 1 else f"{name}: {note}")
-        if len(scene) == 1 and None not in scene:
-            placeholder = f"from scene: {next(iter(scene))}"
-        elif scene and scene != {None}:
-            placeholder = f"varies: {PER_ENTITY_TEXT}"
-        else:
-            placeholder = "from scene: none named"
-        box.lineEdit().setPlaceholderText(placeholder)
         box.setToolTip(
             "The camera the farm renders through. Left empty, nothing is sent "
             "and each shot renders through its scene's camera: the one the "
@@ -3013,17 +2952,17 @@ class _ContextPane(QWidget):
             "(strongest department first), else the shot's camera setting, "
             "else the project default. Pick or type a camera to render every "
             "ticked shot through it instead; the farm refuses one that is not "
-            "on the shot's stage.\n\n" + "\n".join(lines)
+            "on the shot's stage.\n\n" + "\n".join(shown.lines)
         )
-        self._rnd_camera_form_note("\n".join(notes))
-        self._show_scene_values(keys, known)
+        self._rnd_camera_form_note("\n".join(shown.notes))
+        self._show_scene_values(shots)
 
     def _rnd_camera_form_note(self, text: str) -> None:
         """Show ``text`` under the Camera field, or hide the row when empty."""
         self._rnd_camera_note.setText(text)
         self._rnd_form.setRowVisible(self._rnd_camera_note, bool(text))
 
-    def _show_scene_values(self, keys, known) -> None:
+    def _show_scene_values(self, shots) -> None:
         """Say what ``⟨from scene⟩`` means on Samples, Motion blur and DOF.
 
         The values come from the camera lookup's pass over the published
@@ -3033,20 +2972,8 @@ class _ContextPane(QWidget):
         left out and named in the tooltip. Nothing is cooked: the stage the
         farm composes may differ, which the tooltip says.
         """
-        complete = bool(keys) and len(known) == len(keys)
         for key, (widget, label) in self._scene_fields.items():
-            field = resolve.FIELDS_BY_KEY[key]
-            values, lines = [], []
-            for cam_key, found in (zip(keys, known) if complete else ()):
-                name = self._uri_objects[cam_key[0]].segments[-1]
-                if found.error:
-                    lines.append(f"{name}: not read  {found.error}")
-                    continue
-                value, source = found.settings.get(key, (None, ''))
-                values.append(value)
-                shown = resolve.scene_value_text(value, field.kind)
-                lines.append(f"{name}: {shown}  ({source})" if source else f"{name}: {shown}")
-            text = resolve.scene_placeholder(values, field.kind)
+            text, lines = render_camera.scene_values(key, shots)
             attribute = resolve.RENDER_OVERRIDES[key]
             tip = (
                 f"Left unset, nothing is sent and the farm renders with the "
@@ -3224,11 +3151,12 @@ class _ContextPane(QWidget):
                 and 'copy_to_edit' not in self._render_disabled()
             ),
             'preview_frame_list': self._rnd_preview_list.text(),
-            # An asset's turntable renders the studio's frames (hidden there)
-            'frame_list': '' if self._context == 'assets' else self._rnd_frame_list.text(),
-            # ... and whole versions (#92: Into version is hidden there)
+            'frame_list': self._rnd_frame_list.text(),
             'into_version': self._into_target(),
         })
+        if self._context == 'assets':
+            # Its fields for those are hidden there.
+            values = submission.as_turntable(values)
         if self._comp_copy_edit is not None:
             values['comp_copy_to_edit'] = self._comp_copy_edit.isChecked()
             values['comp_preview'] = self._comp_preview.isChecked()
@@ -3262,7 +3190,7 @@ class _ContextPane(QWidget):
                         Uri.parse(uri), department, channel,
                     )))
                 except (OSError, ValueError) as e:
-                    logging.warning(f"Into version: cannot list {uri} {channel}: {e}")
+                    log.warning("Into version: cannot list %s %s: %s", uri, channel, e)
         names = resolve.version_choices(per_row)
         if current and current not in names and repair_spec.is_version_name(current):
             names.append(current)
@@ -3295,7 +3223,7 @@ class _ContextPane(QWidget):
         give each back as it was (tick and tooltip) once the list is
         cleared or is one range and the step is 1. No silent override: the
         artist sees the box off."""
-        targets = getattr(self, '_frame_list_targets', {})
+        targets = self._frame_list_targets
         disabled = self._render_disabled()
         for key, (widget, tooltip) in targets.items():
             why = disabled.get(key)
@@ -3337,23 +3265,11 @@ class _ContextPane(QWidget):
         the progress follows on the same overlay, and the window stays.
         """
         rows = self._resolved_rows()
-        if not rows:
-            self._dialog.notice("Nothing ticked", "Tick at least one cell before submitting.")
-            return
-        renders = any(row.settings.get('render') for row in rows)
-        if renders and self._render_mode() is None:
-            self._dialog.notice(
-                "No render range",
-                "Tick Preview, Full range or both in the Render settings "
-                "before submitting.",
-            )
-            return
-        if renders and not self._rnd_channels.checked_items():
-            self._dialog.notice(
-                "No channel to render",
-                "Check at least one channel in the Render settings before "
-                "submitting.",
-            )
+        refusal = grid.submit_refusal(
+            rows, self._render_mode(), self._rnd_channels.checked_items(),
+        )
+        if refusal is not None:
+            self._dialog.notice(*refusal)
             return
         # Every job family ends in a Deadline submission, unless it runs on
         # this machine; say so before the artist reviews anything, not as
@@ -3566,6 +3482,20 @@ class _EditsPane(QWidget):
 
 # ── Dialog ────────────────────────────────────────────────
 
+class _Pane(Protocol):
+    """What the window asks of a tab's pane (:class:`_ContextPane`, or
+    :class:`_EditsPane` on the Edits tab)."""
+
+    @property
+    def context(self) -> str: ...
+    def set_backend(self, backend: str) -> None: ...
+    def summary_text(self) -> str: ...
+    def ticked_row_count(self) -> int: ...
+    def submit(self) -> None: ...
+    def after_submission(self, sent: set[str]) -> None: ...
+    def shutdown(self) -> None: ...
+
+
 class SubmitJobsDialog(QDialog):
     """The Farm Submit grid, one tab per context (Assets, Shots, Edits).
 
@@ -3579,7 +3509,6 @@ class SubmitJobsDialog(QDialog):
             May be empty: the Render quick action with no workfile open, and
             TumbleTrove Desktop's Farm Submit, open with nothing ticked.
             A Multi (``groups:`` URI) stands for its members.
-        entity_names: Display names parallel to ``entity_uris``.
         context: ``'shots'``, ``'assets'`` or ``'edits'`` — the tab the
             dialog opens on, and the only one ``entity_uris``, ``department``
             and ``tick_kinds`` seed. The other tabs list every entity of
@@ -3610,7 +3539,6 @@ class SubmitJobsDialog(QDialog):
     def __init__(
         self,
         entity_uris: Sequence,
-        entity_names: Sequence[str],
         context: str,
         parent: QWidget | None = None,
         department: str | None = None,
@@ -3625,7 +3553,7 @@ class SubmitJobsDialog(QDialog):
             raise ValueError(f"context must be one of {grid.CONTEXTS}, got {context!r}")
         # A Multi is never submitted itself: its member entities are.
         if any(resolve.is_group_target(uri) for uri in entity_uris):
-            entity_uris = resolve.expand_targets(entity_uris, _group_members)
+            entity_uris = resolve.expand_targets(entity_uris, config_groups.members)
             if not entity_uris:
                 raise ValueError(
                     "This Multi has no member entities to submit. Add "
@@ -3636,7 +3564,7 @@ class SubmitJobsDialog(QDialog):
         self._opened_render_department = render_department or None
         # One pane per context, built the first time its tab is shown and
         # kept until the dialog closes, so switching back finds its ticks.
-        self._panes: dict[str, _ContextPane] = {}
+        self._panes: dict[str, _Pane] = {}
 
         # What the last opening left (``farm.submit.remembered``): per tab,
         # and for the window as a whole (``ui``, which the panes read).
@@ -3720,8 +3648,6 @@ class SubmitJobsDialog(QDialog):
         footer.addWidget(self._submit_btn)
         root.addLayout(footer)
 
-        self._on_backend_changed()  # panes built before the footer
-
         self._overlay = Overlay(self)
         self._overlay.escape.connect(self._on_overlay_escape)
 
@@ -3736,7 +3662,7 @@ class SubmitJobsDialog(QDialog):
     def current_context(self) -> str:
         return self._tabs.tabData(self._tabs.currentIndex())
 
-    def _pane(self, context: str) -> _ContextPane:
+    def _pane(self, context: str) -> _Pane:
         pane = self._panes.get(context)
         if pane is None:
             opened_context, uris, department, kinds = self._opened
@@ -3759,8 +3685,7 @@ class SubmitJobsDialog(QDialog):
                 )
             self._panes[context] = pane
             self._stack.addWidget(pane)
-            if hasattr(self, '_backend') and hasattr(pane, 'set_backend'):
-                pane.set_backend(self.backend())
+            pane.set_backend(self.backend())
         return pane
 
     def _show_context(self, context: str) -> None:
@@ -3781,7 +3706,7 @@ class SubmitJobsDialog(QDialog):
                 self._tabs.blockSignals(False)
             report_failure(f"Listing the {context}", error)
 
-    def _pane_changed(self, pane: _ContextPane) -> None:
+    def _pane_changed(self, pane: _Pane) -> None:
         """A pane's ticks changed: relabel its tab, and the footer if it is in front."""
         index = grid.CONTEXTS.index(pane.context)
         self._tabs.setTabText(
@@ -3866,8 +3791,7 @@ class SubmitJobsDialog(QDialog):
 
     def _on_backend_changed(self, _index: int = 0) -> None:
         for pane in self._panes.values():
-            if hasattr(pane, 'set_backend'):
-                pane.set_backend(self.backend())
+            pane.set_backend(self.backend())
 
     def where_text(self) -> str:
         """Where the review says the steps go."""
@@ -3897,7 +3821,7 @@ class SubmitJobsDialog(QDialog):
         self,
         configs: list[dict],
         steps: dict[str, list[tuple[str, str]]],
-        pane: _ContextPane | _EditsPane,
+        pane: _Pane,
     ) -> None:
         """Send ``configs`` and follow them on the overlay.
 
@@ -3924,7 +3848,7 @@ class SubmitJobsDialog(QDialog):
         content = self._overlay.content()
         return isinstance(content, SubmissionView) and not content.is_finished
 
-    def _back_to_grid(self, pane, view: SubmissionView) -> None:
+    def _back_to_grid(self, pane: _Pane, view: SubmissionView) -> None:
         sent = view.sent_uris()
         self.close_overlay()
         pane.after_submission(sent)

@@ -5,42 +5,14 @@
 
 use crate::blur::{self, Blur, Lens};
 use crate::composite::{self, Shading};
-use crate::ffi::{linear_depth, th_render, ThFrame, ThLight, ThMeshView};
+use crate::ffi::{linear_depth, th_render_scene, ThFrame, ThLight, ThMeshView};
+use crate::fixtures::{abi_frame, camera, mesh_view};
 use crate::lights::{LightShape, Lighting, SceneLight, SceneLights};
 use crate::math::{self, Mat4, Vec3};
 use crate::raster::{self, Frame, Mesh};
 use crate::triangulate;
 use crate::TH_OK;
 use proptest::prelude::*;
-
-/// A camera at z = 5 looking down -z with a 90 degree field of view,
-/// near 0.1, far 100 (GL projection, USD row-vector layout).
-fn camera() -> (Mat4, Mat4) {
-    let mut view_to_world = math::IDENTITY;
-    view_to_world[14] = 5.0;
-    let mut world_to_view = math::IDENTITY;
-    world_to_view[14] = -5.0;
-    let (n, f) = (0.1f64, 100.0f64);
-    let proj: Mat4 = [
-        1.0,
-        0.0,
-        0.0,
-        0.0, //
-        0.0,
-        1.0,
-        0.0,
-        0.0, //
-        0.0,
-        0.0,
-        -(f + n) / (f - n),
-        -1.0, //
-        0.0,
-        0.0,
-        -2.0 * f * n / (f - n),
-        0.0,
-    ];
-    (math::mul(&world_to_view, &proj), view_to_world)
-}
 
 fn frame(width: usize, height: usize, samples: usize) -> Frame {
     let (world_to_clip, view_to_world) = camera();
@@ -306,10 +278,10 @@ proptest! {
     ) {
         let flat = raster::cusp_normals(&points, &triangles, raster::CUSP_DEGREES);
         let (world_to_clip, view_to_world) = camera();
-        let frame = ThFrame { width: 24, height: 16, world_to_clip, view_to_world, samples: 1, shading: 0, ao: 1,
-                             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 };
+        let frame = ThFrame {
+            ao: 1,
+            ..ThFrame::new(24, 16, world_to_clip, view_to_world)
+        };
         let view = |polygonal: u32, normals: *const f32| ThMeshView {
             points: points.as_ptr() as *const f32,
             point_count: points.len() as u32,
@@ -334,7 +306,7 @@ proptest! {
         let draw = |v: ThMeshView| {
             let mut color = vec![0.0f32; 24 * 16 * 4];
             // SAFETY: views of live values and buffers sized for the frame.
-            let status = unsafe { th_render(&frame, &v, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
+            let status = unsafe { th_render_scene(&frame, &v, 1, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null(), std::ptr::null()) };
             (status, color)
         };
         let flat_ptr = if flat.is_empty() { std::ptr::null() } else { flat.as_ptr() as *const f32 };
@@ -1017,27 +989,14 @@ fn the_abi_carries_motion_and_the_lens() {
     let keys = [one[0], translation(0.0, 0.6, -2.0)];
     let draw = |blur_samples: u32, motion: u32, f_stop: f32, with_close: bool, with_keys: bool| {
         let frame = ThFrame {
-            width: 32,
-            height: 24,
-            world_to_clip,
-            view_to_world,
             samples: 4,
-            shading: 0,
             ao: 1,
             blur_samples,
             motion,
-            camera_keys: 0,
-            cameras: [0.0; 64],
             focal_length: 0.5,
             f_stop,
             focus_distance: 20.0,
-            alpha: 0,
-            gpu: 0,
-            linear_depth: 0,
-            lights: std::ptr::null(),
-            light_count: 0,
-            lighting: 0,
-            opaque: 0,
+            ..ThFrame::new(32, 24, world_to_clip, view_to_world)
         };
         let view = ThMeshView {
             points: points.as_ptr() as *const f32,
@@ -1063,7 +1022,21 @@ fn the_abi_carries_motion_and_the_lens() {
         };
         let mut color = vec![0.0f32; 32 * 24 * 4];
         // SAFETY: views of live values and buffers sized for the frame.
-        assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
+        let status = unsafe {
+            th_render_scene(
+                &frame,
+                &view,
+                1,
+                std::ptr::null(),
+                0,
+                color.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        };
+        assert_eq!(status, TH_OK);
         color
     };
     let still = draw(0, 0, 0.0, false, false);
@@ -1593,94 +1566,46 @@ proptest! {
 #[test]
 fn the_abi_alpha_switch_reaches_the_post_pass() {
     let (world_to_clip, view_to_world) = camera();
-    let mut frame = ThFrame {
-        width: 8,
-        height: 6,
-        world_to_clip,
-        view_to_world,
-        samples: 4,
-        shading: 0,
-        ao: 1,
-        blur_samples: 0,
-        motion: 0,
-        camera_keys: 0,
-        cameras: [0.0; 64],
-        focal_length: 0.0,
-        f_stop: 0.0,
-        focus_distance: 0.0,
-        alpha: 1,
-        gpu: 0,
-        linear_depth: 0,
-        lights: std::ptr::null(),
-        light_count: 0,
-        lighting: 0,
-        opaque: 0,
-    };
+    let mut frame = ThFrame { samples: 4, ao: 1, alpha: 1, ..ThFrame::new(8, 6, world_to_clip, view_to_world) };
     let mut color = vec![0.5f32; 8 * 6 * 4];
     // SAFETY: views of live values and buffers sized for the frame.
-    let status = unsafe { th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
+    let status = unsafe {
+        th_render_scene(
+            &frame,
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            0,
+            color.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
     assert_eq!(status, TH_OK);
     assert!(color.iter().all(|&v| v == 0.0), "transparent and empty");
     frame.alpha = 0;
     // SAFETY: views of live values and buffers sized for the frame.
-    let status = unsafe { th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
+    let status = unsafe {
+        th_render_scene(
+            &frame,
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            0,
+            color.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
     assert_eq!(status, TH_OK);
     assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1), "the backdrop, opaque");
 }
 
-// Picking ids (th_render_ids): what the viewport selects by.
-
-fn view_of(points: &[Vec3], triangles: &[[u32; 3]], transforms: &[Mat4]) -> ThMeshView {
-    ThMeshView {
-        points: points.as_ptr() as *const f32,
-        point_count: points.len() as u32,
-        triangles: triangles.as_ptr() as *const u32,
-        triangle_count: triangles.len() as u32,
-        corner_normals: std::ptr::null(),
-        corner_colors: std::ptr::null(),
-        corner_uvs: std::ptr::null(),
-        base_color: [0.6, 0.5, 0.4],
-        tiles: std::ptr::null(),
-        tile_count: 0,
-        transforms: transforms.as_ptr() as *const f64,
-        transform_count: transforms.len() as u32,
-        polygonal: 0,
-        key: 0,
-        version: 0,
-        points_close: std::ptr::null(),
-        transform_keys: std::ptr::null(),
-        transform_key_count: 0,
-        transparency: 0.0,
-        cull: 0,
-    }
-}
-
-fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
-    let (world_to_clip, view_to_world) = camera();
-    ThFrame {
-        width,
-        height,
-        world_to_clip,
-        view_to_world,
-        samples,
-        shading: 0,
-        ao: 0,
-        blur_samples: 0,
-        motion: 0,
-        camera_keys: 0,
-        cameras: [0.0; 64],
-        focal_length: 0.0,
-        f_stop: 0.0,
-        focus_distance: 0.0,
-        alpha: 0,
-        gpu: 0,
-        linear_depth: 0,
-        lights: std::ptr::null(),
-        light_count: 0,
-        lighting: 0,
-        opaque: 0,
-    }
-}
+// Picking ids (th_render_scene): what the viewport selects by.
 
 proptest! {
     // One sample a pixel: a pixel names a surface exactly where it is
@@ -1720,7 +1645,7 @@ proptest! {
         let mut abi = Vec::new();
         let mut kept = Vec::new();
         for (i, ((points, triangles), transforms, skip)) in views.iter().enumerate() {
-            let mut view = view_of(points, triangles, transforms);
+            let mut view = mesh_view(points, triangles, transforms);
             match skip {
                 1 => view.points = std::ptr::null(),
                 2 => view.triangles = std::ptr::null(),
@@ -1735,8 +1660,7 @@ proptest! {
         let mut ids = vec![7i32; w * h * 2];
         // SAFETY: views of live values and buffers sized for the frame.
         let status = unsafe {
-            crate::ffi::th_render_ids(&abi_f, abi.as_ptr(), abi.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
-                                      ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
+            th_render_scene(&abi_f, abi.as_ptr(), abi.len() as u32, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
         };
         prop_assert_eq!(status, TH_OK);
         let meshes: Vec<Mesh> = kept.iter()
@@ -1827,7 +1751,7 @@ proptest! {
             .map(|&(s, yaw, pitch, at)| (turned_quad(s, yaw, pitch), [translation(at[0], at[1], at[2])]))
             .collect();
         let views: Vec<ThMeshView> = geometry.iter().enumerate()
-            .map(|(i, (p, t))| ThMeshView { polygonal: 1, key: i as u64 + 1, version: 1, ..view_of(p, &QUAD, t) })
+            .map(|(i, (p, t))| ThMeshView { polygonal: 1, key: i as u64 + 1, version: 1, ..mesh_view(p, &QUAD, t) })
             .collect();
         let mut frame = abi_frame(w as u32, h as u32, samples as u32);
         frame.ao = 1;
@@ -1844,8 +1768,7 @@ proptest! {
         let call_with = |cache: *const crate::ffi::ThCache, cancel: *const std::sync::atomic::AtomicU32,
                          // SAFETY: callers pass the cache made below or null, a live flag or null, and buffers sized for the frame.
                          color: &mut Vec<f32>, depth: &mut Vec<f32>, ids: &mut Vec<i32>| unsafe {
-            crate::ffi::th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(),
-                                      depth.as_mut_ptr(), ids.as_mut_ptr(), cancel, cache)
+            th_render_scene(&frame, views.as_ptr(), views.len() as u32, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), cancel, cache)
         };
         let call = |cancel: *const std::sync::atomic::AtomicU32, color: &mut Vec<f32>, depth: &mut Vec<f32>, ids: &mut Vec<i32>|
             call_with(cache, cancel, color, depth, ids);
@@ -1884,14 +1807,25 @@ fn a_cancelled_frame_writes_nothing() {
     let points: Vec<Vec3> = vec![[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [0.0, 1.0, 0.0]];
     let triangles = vec![[0u32, 1, 2]];
     let transforms = vec![math::IDENTITY];
-    let view = view_of(&points, &triangles, &transforms);
+    let view = mesh_view(&points, &triangles, &transforms);
     let frame = abi_frame(16, 12, 8);
     let mut color = vec![-5.0f32; 16 * 12 * 4];
     let mut ids = vec![-5i32; 16 * 12 * 2];
     let cancel = std::sync::atomic::AtomicU32::new(1);
     // SAFETY: views of live values and buffers sized for the frame.
     let status = unsafe {
-        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), ids.as_mut_ptr(), &cancel, std::ptr::null())
+        th_render_scene(
+            &frame,
+            &view,
+            1,
+            std::ptr::null(),
+            0,
+            color.as_mut_ptr(),
+            std::ptr::null_mut(),
+            ids.as_mut_ptr(),
+            &cancel,
+            std::ptr::null(),
+        )
     };
     assert_eq!(status, crate::TH_CANCELLED);
     assert!(color.iter().all(|&c| c == -5.0) && ids.iter().all(|&i| i == -5));
@@ -1899,7 +1833,18 @@ fn a_cancelled_frame_writes_nothing() {
     cancel.store(0, std::sync::atomic::Ordering::Relaxed);
     // SAFETY: views of live values and buffers sized for the frame.
     let status = unsafe {
-        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), ids.as_mut_ptr(), &cancel, std::ptr::null())
+        th_render_scene(
+            &frame,
+            &view,
+            1,
+            std::ptr::null(),
+            0,
+            color.as_mut_ptr(),
+            std::ptr::null_mut(),
+            ids.as_mut_ptr(),
+            &cancel,
+            std::ptr::null(),
+        )
     };
     assert_eq!(status, TH_OK);
     assert_eq!(&ids[(6 * 16 + 8) * 2..(6 * 16 + 8) * 2 + 2], &[0, 0]);
@@ -1931,7 +1876,7 @@ proptest! {
             let (mut color, mut depth) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h]);
             // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe {
-                th_render(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(), cache)
+                th_render_scene(&frame, views.as_ptr(), views.len() as u32, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null(), cache)
             };
             (status, color.iter().map(|c| c.to_bits()).collect::<Vec<_>>(), depth.iter().map(|d| d.to_bits()).collect::<Vec<_>>())
         };
@@ -1956,7 +1901,7 @@ proptest! {
                 polygonal: 1,
                 key: m as u64 + 1,
                 version: versions[m],
-                ..view_of(&scene[m].0, &scene[m].1, &transforms)
+                ..mesh_view(&scene[m].0, &scene[m].1, &transforms)
             }).collect();
             let kept = draw(&views, cache);
             let fresh = draw(&views, std::ptr::null());
@@ -2012,7 +1957,7 @@ proptest! {
                 polygonal: polygonal[m] as u32,
                 key: m as u64 + 1,
                 version: 1,
-                ..view_of(points, triangles, &moved)
+                ..mesh_view(points, triangles, &moved)
             }).collect();
             // Ids too: a pixel left uncovered must not keep an earlier
             // frame's surface for the viewer to pick.
@@ -2021,8 +1966,7 @@ proptest! {
                 let cancel = std::sync::atomic::AtomicU32::new(0);
                 // SAFETY: views of live values and buffers sized for the frame.
                 let status = unsafe {
-                    crate::ffi::th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(),
-                                              depth.as_mut_ptr(), ids.as_mut_ptr(), &cancel, cache)
+                    th_render_scene(&frame, views.as_ptr(), views.len() as u32, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), &cancel, cache)
                 };
                 (status, color.iter().map(|c| c.to_bits()).collect::<Vec<_>>(),
                  depth.iter().map(|d| d.to_bits()).collect::<Vec<_>>(), ids)
@@ -2137,12 +2081,12 @@ proptest! {
         frame.world_to_clip = math::mul(&world_to_view, &proj);
         frame.view_to_world = view_to_world;
         frame.shading = 1;
-        let views = [view_of(&points, &triangles, &transforms)];
+        let views = [mesh_view(&points, &triangles, &transforms)];
         let draw = |frame: &ThFrame| {
             let (mut color, mut depth) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h]);
             // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe {
-                th_render(frame, views.as_ptr(), 1, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null())
+                th_render_scene(frame, views.as_ptr(), 1, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null(), std::ptr::null())
             };
             (status, color, depth)
         };
@@ -2427,15 +2371,43 @@ fn the_abi_transparency_is_one_minus_the_opacity() {
     let mut frame = abi_frame(8, 6, 4);
     frame.shading = Shading::Albedo.abi();
     let draw = |transparency: f32| {
-        let view = ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..view_of(&points, &QUAD, &at) };
+        let view = ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..mesh_view(&points, &QUAD, &at) };
         let mut color = vec![0.0f32; 8 * 6 * 4];
         // SAFETY: views of live values and buffers sized for the frame.
-        assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
+        let status = unsafe {
+            th_render_scene(
+                &frame,
+                &view,
+                1,
+                std::ptr::null(),
+                0,
+                color.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        };
+        assert_eq!(status, TH_OK);
         color
     };
     let mut empty = vec![0.0f32; 8 * 6 * 4];
     // SAFETY: views of live values and buffers sized for the frame.
-    assert_eq!(unsafe { th_render(&frame, std::ptr::null(), 0, empty.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
+    let status = unsafe {
+        th_render_scene(
+            &frame,
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            0,
+            empty.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(status, TH_OK);
     assert_eq!(draw(1.0), empty, "fully transparent draws nothing");
     let half = draw(0.5);
     for y in 0..6 {
@@ -2475,13 +2447,12 @@ proptest! {
             frame.shading = Shading::Albedo.abi();
             frame.opaque = opaque;
             let views = [
-                ThMeshView { base_color: [0.1, 0.8, 0.2], ..view_of(&back, &QUAD, &behind) },
-                ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..view_of(&front, &QUAD, &at) },
+                ThMeshView { base_color: [0.1, 0.8, 0.2], ..mesh_view(&back, &QUAD, &behind) },
+                ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..mesh_view(&front, &QUAD, &at) },
             ];
             let mut color = vec![0.0f32; 8 * 6 * 4];
             // SAFETY: views of live values and buffers sized for the frame.
-            assert_eq!(unsafe { th_render(&frame, views.as_ptr(), 2, color.as_mut_ptr(), std::ptr::null_mut(),
-                                          std::ptr::null()) }, TH_OK);
+            assert_eq!(unsafe { th_render_scene(&frame, views.as_ptr(), 2, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null(), std::ptr::null()) }, TH_OK);
             color
         };
         let solid = draw(0, 0.0);
@@ -2551,7 +2522,7 @@ proptest! {
         (n, heights, part) in parted_sheet(), polygonal: bool, samples in prop::sample::select(vec![1u32, 4]),
         colours in prop::collection::vec(colour(), 3),
     ) {
-        use crate::ffi::{mesh_normals, th_render_ids};
+        use crate::ffi::mesh_normals;
         let (points, triangles) = sheet(n, &heights);
         let (sorted, runs) = by_part(&triangles, &part);
         let at = [translation(0.0, 0.0, 1.0)];
@@ -2562,7 +2533,7 @@ proptest! {
         let whole = ThMeshView {
             corner_colors: corner_colors.as_ptr() as *const f32,
             polygonal: polygonal as u32,
-            ..view_of(&points, &sorted, &at)
+            ..mesh_view(&points, &sorted, &at)
         };
         let normals = mesh_normals(&points, &sorted, polygonal);
         prop_assert_eq!(normals.len(), sorted.len() * 3);
@@ -2572,7 +2543,7 @@ proptest! {
             corner_normals: normals[run.start * 3..].as_ptr() as *const f32,
             base_color: colours[*p],
             polygonal: polygonal as u32,
-            ..view_of(&points, &sorted, &at)
+            ..mesh_view(&points, &sorted, &at)
         }).collect();
         let mut frame = abi_frame(40, 30, samples);
         frame.ao = 1;
@@ -2580,8 +2551,7 @@ proptest! {
             let (mut color, mut depth, mut ids) = (vec![0.0f32; 40 * 30 * 4], vec![0.0f32; 40 * 30], vec![0i32; 40 * 30 * 2]);
             // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe {
-                th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
-                              ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
+                th_render_scene(&frame, views.as_ptr(), views.len() as u32, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
             };
             assert_eq!(status, TH_OK);
             (color, depth, ids)
@@ -2685,16 +2655,26 @@ proptest! {
 /// 2 one facing it with its front, 0 neither; unknown codes cull nothing.
 #[test]
 fn cull_through_the_abi() {
-    use crate::ffi::th_render_ids;
     let at = [translation(0.0, 0.0, 1.0)];
     let draw = |reversed: bool, cull: u32| {
         let (points, triangles) = facing_quad(reversed);
-        let view = ThMeshView { cull, ..view_of(&points, &triangles, &at) };
+        let view = ThMeshView { cull, ..mesh_view(&points, &triangles, &at) };
         let frame = abi_frame(20, 16, 1);
         let (mut color, mut depth, mut ids) = (vec![0.0f32; 20 * 16 * 4], vec![0.0f32; 20 * 16], vec![0i32; 20 * 16 * 2]);
         // SAFETY: views of live values and buffers sized for the frame.
         let status = unsafe {
-            th_render_ids(&frame, &view, 1, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
+            th_render_scene(
+                &frame,
+                &view,
+                1,
+                std::ptr::null(),
+                0,
+                color.as_mut_ptr(),
+                depth.as_mut_ptr(),
+                ids.as_mut_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
         };
         assert_eq!(status, TH_OK);
         ids.chunks(2).filter(|id| id[0] >= 0).count()
@@ -2954,7 +2934,7 @@ fn abi_light(kind: u32, intensity: f32, at: Vec3, facing: Vec3) -> ThLight {
 fn the_abi_lighting_switch_and_lights_that_add_nothing() {
     let points = vec![[-1.5f32, -1.5, 0.0], [1.5, -1.5, 0.0], [1.5, 1.5, 0.0], [-1.5, 1.5, 0.0]];
     let one = [math::IDENTITY];
-    let view = view_of(&points, &QUAD, &one);
+    let view = mesh_view(&points, &QUAD, &one);
     let draw = |lights: &[ThLight], lighting: u32| {
         let mut f = abi_frame(16, 12, 4);
         f.lights = if lights.is_empty() { std::ptr::null() } else { lights.as_ptr() };
@@ -2962,7 +2942,20 @@ fn the_abi_lighting_switch_and_lights_that_add_nothing() {
         f.lighting = lighting;
         let mut color = vec![0.0f32; 16 * 12 * 4];
         // SAFETY: views of live values and buffers sized for the frame.
-        let status = unsafe { th_render(&f, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
+        let status = unsafe {
+            th_render_scene(
+                &f,
+                &view,
+                1,
+                std::ptr::null(),
+                0,
+                color.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        };
         assert_eq!(status, TH_OK);
         color
     };
@@ -2980,4 +2973,38 @@ fn the_abi_lighting_switch_and_lights_that_add_nothing() {
     // corner nearer the sphere light (up and right) than the far one.
     let at = |x: usize, y: usize| lit[(y * 16 + x) * 4];
     assert!(at(10, 4) > at(3, 9), "nearer the light is brighter: {} vs {}", at(10, 4), at(3, 9));
+}
+
+// Asking for ids changes nothing else: th_render_scene draws the same
+// colour and depth (bit for bit) with ids as without, and the same ids on
+// a second draw.
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+    #[test]
+    fn ids_change_nothing_else(
+        (pa, ta) in mesh_data(), (pb, tb) in mesh_data(), transforms in transforms(),
+        samples in sample_count(), w in 4usize..20, h in 4usize..16,
+    ) {
+        let views = [mesh_view(&pa, &ta, &transforms), mesh_view(&pb, &tb, &transforms)];
+        let frame = abi_frame(w as u32, h as u32, samples as u32);
+        let n = views.len() as u32;
+        let draw = |with_ids: bool| {
+            let mut color = vec![0.0f32; w * h * 4];
+            let mut depth = vec![0.0f32; w * h];
+            let mut ids = vec![7i32; w * h * 2];
+            let ids_ptr = if with_ids { ids.as_mut_ptr() } else { std::ptr::null_mut() };
+            // SAFETY: views of live values and buffers sized for the frame.
+            let status = unsafe {
+                th_render_scene(&frame, views.as_ptr(), n, std::ptr::null(), 0, color.as_mut_ptr(),
+                                depth.as_mut_ptr(), ids_ptr, std::ptr::null(), std::ptr::null())
+            };
+            let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            (status, bits(&color), bits(&depth), ids)
+        };
+        let (plain, first, second) = (draw(false), draw(true), draw(true));
+        prop_assert_eq!(plain.0, TH_OK);
+        prop_assert_eq!(&plain.1, &first.1);
+        prop_assert_eq!(&plain.2, &first.2);
+        prop_assert_eq!(&first, &second);
+    }
 }

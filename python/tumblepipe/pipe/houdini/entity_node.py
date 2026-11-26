@@ -37,6 +37,7 @@ from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import (
     Department,
+    entity_context,
     list_departments,
     list_entity_departments,
 )
@@ -287,6 +288,32 @@ class EntityNode(ImportOptions, ns.Node):
             return department_raw
         context = self._workfile_context()
         return f'{FROM_CONTEXT}: {context.department_name if context else "none"}'
+
+    def department_context(self) -> str | None:
+        """The department context ('shots' or 'assets') of the node's
+        entity; None when the entity is unset or an edit, which has no
+        departments."""
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None or get_entity_type(entity_uri) == 'edit':
+            return None
+        return entity_context(entity_uri)
+
+    def department_choices(
+        self, include_generated: bool = True, publishable: bool = False,
+        ) -> list[str]:
+        """A Department menu: 'from_context', then the departments the
+        node's entity has in its own context, in pipeline order (without
+        the generated ones unless ``include_generated``, only the
+        publishable ones when ``publishable``). Just 'from_context' when
+        there is no department context."""
+        context = self.department_context()
+        if context is None:
+            return [FROM_CONTEXT]
+        return [FROM_CONTEXT] + [
+            department.name
+            for department in self.scoped_departments(context, include_generated)
+            if department.publishable or not publishable
+        ]
 
     def scoped_departments(
         self, context: str, include_generated: bool = True,

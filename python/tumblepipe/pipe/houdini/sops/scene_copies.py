@@ -382,7 +382,7 @@ def _rig_rows_wanted(stage, rows):
     wanted = []
     for asset_uri, instances in rows:
         on_stage = import_rig.stage_copies(
-            asset_uri, import_rig._stage_children(stage, asset_uri))
+            asset_uri, import_rig.stage_children(stage, asset_uri))
         count = wanted_copies(asset_uri, instances, on_stage)
         if count is not None:
             wanted.append((asset_uri, count))
@@ -394,7 +394,7 @@ def _run(native, shot_import, wanted, rediscover) -> None:
     import hou
     from tumblepipe.api import api
     from tumblepipe.pipe.houdini import nodes as ns
-    from tumblepipe.pipe.houdini.sops import import_rig
+    from tumblepipe.pipe.houdini.lops import animate_ghost
 
     if shot_import is None:
         raise ns.NodeError(
@@ -417,23 +417,21 @@ def _run(native, shot_import, wanted, rediscover) -> None:
         hou.ui.setStatusMessage(status, severity=(
             hou.severityType.Warning if 'still:' in status
             else hou.severityType.Message))
-    import_rig._refresh_ghost(native)
+    animate_ghost.refresh_ghost(native)
 
 
 def from_import_rigs(kwargs) -> None:
     """th::import_rigs' Set Scene Copies button: every row whose import
     makes more characters than the stage has copies."""
-    from tumblepipe.pipe.houdini import nodes as ns
     from tumblepipe.pipe.houdini.sops.import_rigs import ImportRigs
 
     native = kwargs['node']
     node = ImportRigs(native)
-    with ns.node_errors_as_message(TITLE):
-        stage = node.get_stage()
-        rows = [(asset_uri, instances)
-                for asset_uri, _channel, _version, instances in node.get_row_imports()]
-        _run(native, shot_import_for(native, node.parm('stage_path').eval()),
-             _rig_rows_wanted(stage, rows), node.discover)
+    stage = node.get_stage()
+    rows = [(asset_uri, instances)
+            for asset_uri, _channel, _version, instances in node.get_row_imports()]
+    _run(native, shot_import_for(native, node.parm('stage_path').eval()),
+         _rig_rows_wanted(stage, rows), node.discover)
 
 
 def _import_rigs_around(native):
@@ -459,31 +457,30 @@ def from_import_rig(kwargs) -> None:
 
     native = kwargs['node']
     node = import_rig.ImportRig(native)
-    with ns.node_errors_as_message(TITLE):
-        stage = import_rig._shot_stage(native)
-        if stage is None:
-            raise ns.NodeError(
-                f'{native.path()}: not inside a th::animate, so there is no '
-                'shot stage to match.')
-        asset_uri = node.require_entity_uri()
-        outer = _import_rigs_around(native)
+    stage = import_rig.shot_stage(native)
+    if stage is None:
+        raise ns.NodeError(
+            f'{native.path()}: not inside a th::animate, so there is no '
+            'shot stage to match.')
+    asset_uri = node.require_entity_uri()
+    outer = _import_rigs_around(native)
 
-        def rediscover():
-            if outer is None:
-                return node.execute() or ''
-            path = outer.path()
+    def rediscover():
+        if outer is None:
+            return node.execute() or ''
+        path = outer.path()
 
-            def _discover():
-                found = hou.node(path)
-                if found is not None:
-                    import_rig.announce_warning(ImportRigs(found).discover())
-            if hou.isUIAvailable():
-                import hdefereval
-                hdefereval.executeDeferred(_discover)
-            else:
-                _discover()
-            return ''
+        def _discover():
+            found = hou.node(path)
+            if found is not None:
+                import_rig.announce_warning(ImportRigs(found).discover())
+        if hou.isUIAvailable():
+            import hdefereval
+            hdefereval.executeDeferred(_discover)
+        else:
+            _discover()
+        return ''
 
-        _run(native, shot_import_for(native),
-             _rig_rows_wanted(stage, [(asset_uri, node.get_instances())]),
-             rediscover)
+    _run(native, shot_import_for(native),
+         _rig_rows_wanted(stage, [(asset_uri, node.get_instances())]),
+         rediscover)

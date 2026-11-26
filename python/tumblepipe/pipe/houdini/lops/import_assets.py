@@ -11,7 +11,7 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.pipe.paths import current_staged_path
+from tumblepipe.pipe.paths import get_latest_staged_path, get_staged_base_path
 from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
@@ -20,6 +20,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.asset_rows import AssetRows
 from tumblepipe.pipe.houdini.entity_node import ImportOptions
 from tumblepipe.pipe.houdini.lops import import_asset
+from tumblepipe.pipe.houdini.nodes import button
 
 def _instance_prim_paths(asset_prim_path: str, instances: int) -> list[str]:
     """The prims the Duplicate LOP makes of ``asset_prim_path``, in order.
@@ -110,13 +111,11 @@ class ImportAssets(ImportOptions, AssetRows):
     def _version_folder(self, asset_uri: Uri, channel_name: str) -> Path:
         """The row's channel's staged builds (_staged/<channel>/v####,
         mirroring import_shot)."""
-        return api.storage.resolve(
-            Uri.parse('export:/') / asset_uri.segments / '_staged' / channel_name
-        )
+        return get_staged_base_path(asset_uri, channel_name)
 
     def _latest_version(self, asset_uri: Uri, channel_name: str) -> str | None:
         """What the resolver's latest mode loads: the newest finished build."""
-        latest = current_staged_path(asset_uri, channel_name)
+        latest = get_latest_staged_path(asset_uri, channel_name)
         return None if latest is None else latest.name
 
     def scoped_departments(
@@ -430,11 +429,13 @@ def on_created(raw_node):
     node = ImportAssets(raw_node)
     node._initialize()
 
+@button('Import Assets')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportAssets(raw_node)
     node.execute()
 
+@button('Import Assets')
 def browse(kwargs):
     """The top Browse... button: pick several assets in the picker and add
     a row for each. Assets already in a row are skipped; the status line
@@ -458,6 +459,7 @@ def browse(kwargs):
     hou.ui.setStatusMessage(message, severity=hou.severityType.Message)
 
 
+@button('Import Assets')
 def select(kwargs):
     """A row's Browse... button: pick that row's asset."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog

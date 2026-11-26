@@ -21,7 +21,7 @@ becomes this config by :func:`config_from_row`.
 from pathlib import Path
 
 from tumblepipe.api import path_str
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.farm.jobs import edit_render as edit_render_job
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import edit_render_pipeline as edit_render_pipeline_spec

@@ -17,6 +17,7 @@ from tumbletrove.asset_browser.api.types import Asset, MenuItem
 from tumblepipe.naming import get_version_code
 from tumblepipe.pipe.houdini.ui.report import reporting
 
+from . import containers
 from .entity_ops import asset_context
 from .types import latest_version
 
@@ -417,7 +418,7 @@ class PipelineMenus:
         # A Multi's department is one workfile shared by its members: the
         # same menu as a shot's, with its exports (written per member)
         # reached through a member submenu.
-        is_group = asset_id.startswith("group:")
+        is_group = containers.group_of(asset_id) is not None
         if is_group:
             versions = self._containers.group_department_versions(
                 asset_id,

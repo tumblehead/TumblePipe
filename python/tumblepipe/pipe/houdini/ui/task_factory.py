@@ -11,7 +11,7 @@ import uuid
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_export_frame_range
-from tumblepipe.pipe.paths import latest_export_path, current_staged_path
+from tumblepipe.pipe.paths import latest_export_path, get_latest_staged_path
 
 from .process_task import ProcessTask, TaskStatus
 from . import task_range
@@ -50,16 +50,6 @@ def _get_frame_range_values(entity_uri: Uri, export_node=None) -> tuple[int | No
             return (None, None)
     render_range = frame_range.full_range()
     return (render_range.first_frame, render_range.last_frame)
-
-
-def _entity_context_from_uri(entity_uri: Uri | None) -> str:
-    """Map an entity URI to the 'shots' or 'assets' validator context."""
-    if entity_uri is None:
-        return 'assets'
-    uri_str = str(entity_uri)
-    if uri_str.startswith('entity:/shots/'):
-        return 'shots'
-    return 'assets'
 
 
 def _uri_name(uri: Uri) -> str:
@@ -150,31 +140,17 @@ def _create_validation_task(
         of ``export_nodes`` in ``channels``: one validation covers every
         channel's export of the department.
     """
-    entity_context = _entity_context_from_uri(entity_uri)
-    validation_ctx = {'entity_uri': str(entity_uri)} if entity_uri is not None else {}
-
     def collect_issues_fn() -> list:
         """The issues the prompt would show: every issue of a failed
         validation, none when it passed."""
-        from tumblepipe.pipe.houdini.validators import validate_stage_for_department
+        from tumblepipe.pipe.houdini.validators import validate_node_stage
         from tumblepipe.pipe.houdini.validators.base import ValidationResult
 
-        # Collect all validation results
         combined_result = ValidationResult()
-
         for export_node in export_nodes:
-            native = export_node.native()
-            stage_node = native.node('IN_stage')
-            if stage_node is None:
-                continue
-            stage = stage_node.stage()
-            if stage is None:
-                continue
-            root = stage.GetPseudoRoot()
-            result = validate_stage_for_department(
-                root, entity_context, department, validation_ctx
-            )
-            combined_result.merge(result)
+            result = validate_node_stage(export_node.native(), entity_uri, department)
+            if result is not None:
+                combined_result.merge(result)
 
         # No validation failures - continue normally.
         #
@@ -188,7 +164,7 @@ def _create_validation_task(
                 logger.warning(
                     "Export validation passed with %d warning(s) for %s/%s:\n%s",
                     len(combined_result.warnings),
-                    entity_context, department,
+                    entity_uri, department,
                     combined_result.format_message(),
                 )
             return []
@@ -409,7 +385,7 @@ def _create_export_group_task(
 
 def _get_build_version(entity_uri: Uri, channel_name: str = 'default') -> str | None:
     """The current build version for an entity, or None before its first."""
-    return _get_version_from_path(current_staged_path(entity_uri, channel_name))
+    return _get_version_from_path(get_latest_staged_path(entity_uri, channel_name))
 
 
 def _create_build_group_task(

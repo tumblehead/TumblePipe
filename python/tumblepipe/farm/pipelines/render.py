@@ -21,7 +21,7 @@ from pathlib import Path
 import logging
 
 from tumblepipe.api import path_str
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.farm.checks import checked
 from tumblepipe.farm.jobs import denoise as denoise_job
 from tumblepipe.farm.jobs import render as render_job

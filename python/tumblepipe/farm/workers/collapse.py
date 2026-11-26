@@ -6,14 +6,13 @@ side then submits the render and playblast jobs with those snapshots bundled,
 exactly as ``batch_submit`` does for an entity it does not publish.
 """
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
 import sys
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.io import load_json, store_json
@@ -97,17 +96,14 @@ def _submit_playblast(config, result, output_dir) -> None:
         pool_name=playblast['pool_name'],
         priority=playblast['priority'],
         res=playblast['res'],
-        look=collapse_spec.playblast_look(playblast),
+        look=playblast['look'],
     ), paths)
 
 
 def main(config: dict, _frame_span: BlockRange) -> int:
     print_env()
 
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
         config_path = temp_path / 'config.json'
         output_dir = temp_path / 'collapsed'
         store_json(config_path, dict(config, output_dir = path_str(output_dir)))

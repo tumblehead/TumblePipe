@@ -31,8 +31,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    from tumblepipe.farm_app import _add_houdini_dll_directory
-    _add_houdini_dll_directory()
+    from tumblepipe.util.hfs import add_houdini_dll_directory
+    add_houdini_dll_directory()
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     app = QApplication.instance() or QApplication(sys.argv[:1])

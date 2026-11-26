@@ -58,6 +58,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path, PurePosixPath
+from tumblepipe.util.hfs import add_houdini_dll_directory
 
 PLAN_VERSION = 1
 PLAN_NAME = 'plan.json'
@@ -299,15 +300,6 @@ def launch(plan_path: Path) -> subprocess.Popen:
 
 # ── running (in the child) ────────────────────────────────
 
-def _add_houdini_dll_directory() -> None:
-    """Let ``pxr`` load: Python 3.8+ on Windows ignores PATH for DLLs."""
-    hfs = os.environ.get('HFS')
-    if hfs and hasattr(os, 'add_dll_directory'):
-        bin_dir = Path(hfs) / 'bin'
-        if bin_dir.is_dir():
-            os.add_dll_directory(str(bin_dir))
-
-
 def run(plan_path: Path) -> int:
     plan_path = Path(plan_path)
     progress_path = plan_path.parent / PROGRESS_NAME
@@ -315,7 +307,7 @@ def run(plan_path: Path) -> int:
     os.environ.update(plan['env'])
     from tumblepipe.farm.backend import BACKEND_ENV
     os.environ[BACKEND_ENV] = plan_backend(plan)
-    _add_houdini_dll_directory()
+    add_houdini_dll_directory()
 
     rows = plan['rows']
     emit(progress_path, event='start', total=len(rows))

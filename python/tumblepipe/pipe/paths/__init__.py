@@ -19,6 +19,7 @@ from tumblepipe.pipe.paths.version import (
     cached_version_listings,
     is_finished_version,
     get_latest_version_path,
+    latest_finished_version_path,
     get_next_version_path,
 )
 from tumblepipe.pipe.paths.render import (
@@ -69,6 +70,7 @@ from tumblepipe.pipe.paths.export import (
     latest_export_path,
     next_export_path,
     get_export_uri,
+    get_staged_uri,
     get_rig_export_path,
     get_layer_file_name,
     get_root_layer_file_name,
@@ -80,8 +82,6 @@ from tumblepipe.pipe.paths.export import (
 from tumblepipe.pipe.paths.staged import (
     get_staged_path,
     get_staged_file_path,
-    current_staged_path,
-    current_staged_file_path,
     next_staged_path,
     next_staged_file_path,
     get_staged_base_path,
@@ -101,6 +101,7 @@ __all__ = [
     'cached_version_listings',
     'is_finished_version',
     'get_latest_version_path',
+    'latest_finished_version_path',
     'get_next_version_path',
     # render
     'AOV',
@@ -147,6 +148,7 @@ __all__ = [
     'latest_export_path',
     'next_export_path',
     'get_export_uri',
+    'get_staged_uri',
     'get_rig_export_path',
     'get_layer_file_name',
     'get_root_layer_file_name',
@@ -157,8 +159,6 @@ __all__ = [
     # staged
     'get_staged_path',
     'get_staged_file_path',
-    'current_staged_path',
-    'current_staged_file_path',
     'next_staged_path',
     'next_staged_file_path',
     'get_staged_base_path',

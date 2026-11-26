@@ -236,9 +236,12 @@ Qt and the pipeline clients onto the launch path.
   scoping) and the project's department pool editor.
 - `recipes.py` / `texture_sets.py` / `nodes.py` — the Recipes, Texture
   Sets and Nodes card kinds.
+- `card_refs.py` — `card_ref`: what a card id names (a library card, a
+  node, a Multi, a Root or an entity), parsed once; every catalog hook
+  routes on it.
 - `library_kinds.py` — `LibraryKind`, the interface recipes and texture sets
-  implement, and `LibraryKinds`, which routes a card id to its kind by
-  prefix for every catalog hook.
+  implement, and `LibraryKinds`, which finds a library card's kind by its
+  id's prefix for `card_refs`.
 - `libraries.py` — libraries: which folders each project lists
   (`TH_LIBRARY_PATH`, the Projects page), `library.json`, and the cached
   index the kinds and the sidebar read.

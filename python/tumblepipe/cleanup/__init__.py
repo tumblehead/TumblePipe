@@ -25,5 +25,5 @@ when confirmed), recording everything it removed in
 
 from tumblepipe.cleanup.core import (  # noqa: F401
     CATEGORY_KEYS, CategoryPlan, Entry, Plan, Settings, apply, categories,
-    human, log_path_for, make_plan, summary,
+    log_path_for, make_plan, summary,
 )

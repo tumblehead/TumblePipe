@@ -212,7 +212,7 @@ pub struct LatestWorkfile {
 pub fn latest_workfiles(roots: &ProjectRoots) -> Vec<LatestWorkfile> {
     let mut found = Vec::new();
     for purpose in ["assets", "shots", "groups"] {
-        let Some(root) = roots.get(purpose) else { continue };
+        let root = roots.get(purpose);
         if !root.path.is_dir() {
             continue;
         }

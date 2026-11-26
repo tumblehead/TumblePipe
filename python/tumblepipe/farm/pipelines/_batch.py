@@ -6,13 +6,12 @@ to ``jobs``/``deps`` and returns the names later work should depend on;
 and ``submit(config, paths)`` submits them as one batch.
 """
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Callable
 import datetime as dt
 import logging
 
-from tumblepipe.api import api, get_project_name, path_str
+from tumblepipe.api import api, get_project_name, project_temp_dir
 from tumblepipe.util.uri import Uri
 
 
@@ -28,7 +27,7 @@ def new_batch(title: str, entity=None):
     Manager and the clean-ups tell whose jobs they are."""
     # Imported here: the pipeline modules are imported by the workers that
     # chain them, which need not reach Deadline to do so.
-    from tumblepipe.apps.deadline import Batch
+    from tumblepipe.farm.job import Batch
     from tumblepipe.farm import stamp
     return Batch(title, extra_info=stamp.stamp(get_project_name(), entity))
 
@@ -53,10 +52,7 @@ def submit_batch(
 
     # Deadline, or this machine's local farm (farm.backend).
     farm = get_farm()
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
         logging.debug(f'Temporary directory: {temp_path}')
 
         jobs = {}

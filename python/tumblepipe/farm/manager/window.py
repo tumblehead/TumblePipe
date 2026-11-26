@@ -20,6 +20,7 @@ docs/development.md).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
@@ -38,7 +39,9 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.local import queue, runner
-from tumblepipe.farm.manager import cleanup, frames_preview, machine, priority, render_again, rows
+from tumblepipe.farm.manager import (
+    cleanup, deadline_jobs, frames_preview, machine, priority, render_again, rows, sources,
+)
 from tumblepipe.util import desktop, value_ladder_qt
 
 log = logging.getLogger(__name__)
@@ -289,15 +292,21 @@ def _batches(count: int) -> str:
     return f"{count} batch{'' if count == 1 else 'es'}"
 
 
+def _first_lines(lines: list[str]) -> list[str]:
+    """A confirmation's list: its first ``_CONFIRM_NAMES`` lines, then how many more."""
+    shown = lines[:_CONFIRM_NAMES]
+    if len(lines) > _CONFIRM_NAMES:
+        shown.append(f'  … and {len(lines) - _CONFIRM_NAMES} more')
+    return shown
+
+
 def _removal_lines(removals: list[cleanup.Removal]) -> list[str]:
     """A confirmation's list of batches: name and submit time, the first few."""
     lines = []
-    for removal in removals[:_CONFIRM_NAMES]:
+    for removal in removals:
         when = _when(min(job.submitted for job in removal.jobs))
         lines.append(f'  {removal.title} · {when}' if when else f'  {removal.title}')
-    if len(removals) > _CONFIRM_NAMES:
-        lines.append(f'  … and {len(removals) - _CONFIRM_NAMES} more')
-    return lines
+    return _first_lines(lines)
 
 
 class ProgressDelegate(QStyledItemDelegate):
@@ -400,7 +409,9 @@ class ManagerWindow(QWidget):
 
         self._root = queue.root()
         self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='farm-manager')
-        self._futures: dict[Future, tuple] = {}
+        # Each background call with what to do on the GUI thread when it
+        # returns and when it raises (:meth:`_submit`).
+        self._futures: dict[Future, tuple[Callable, Callable]] = {}
         # Set on close: the executor is shut down, and the teardown's own
         # signals (the Show combo emptied by release_kept_references) must
         # neither reload the trees nor ask the farm.
@@ -512,7 +523,7 @@ class ManagerWindow(QWidget):
         self._machine_timer.start()
         self._refresh_local()
         self._refresh_farm()
-        self._submit(('presets',), _load_presets)
+        self._submit(_load_presets, on_done=self._presets_read, on_failed=self._presets_failed)
         self._update_actions()
 
     # ── building ──────────────────────────────────────────
@@ -957,7 +968,8 @@ class ManagerWindow(QWidget):
         if job is not None and job.source == rows.LOCAL:
             task = next((t for t in self._tasks if t.status == queue.RENDERING and t.pid), None)
         self._machine_loading = True
-        self._submit(('machine',), self._sampler.sample, task.pid if task else 0)
+        self._submit(self._sampler.sample, task.pid if task else 0,
+                     on_done=self._machine_sampled, on_failed=self._machine_sample_failed)
 
     def _refresh_farm(self) -> None:
         if self._farm_loading or not self._farm_available:
@@ -965,149 +977,182 @@ class ManagerWindow(QWidget):
         if self._source.currentData() == rows.LOCAL:
             return
         self._farm_loading = True
-        self._submit(('farm_jobs',), _fetch_farm_jobs)
+        self._submit(deadline_jobs.fetch_jobs, on_done=self._farm_jobs_read, on_failed=self._farm_jobs_failed)
         job = self._current_job
         if job is not None and job.source == rows.FARM:
-            self._submit(('farm_tasks', job.id), _fetch_farm_tasks, job.id)
+            self._load_farm_tasks(job.id)
 
-    def _submit(self, key: tuple, func, *args) -> None:
+    def _submit(self, func, *args, on_done: Callable, on_failed: Callable) -> None:
+        """Run ``func(*args)`` on the pool; :meth:`_poll_futures` hands its
+        result to ``on_done``, or what it raised to ``on_failed``, on the GUI
+        thread. Only the call itself runs on the pool: no widget is touched
+        there."""
         if self._closed:
             return
-        self._futures[self._executor.submit(func, *args)] = key
+        self._futures[self._executor.submit(func, *args)] = (on_done, on_failed)
 
     def _poll_futures(self) -> None:
         for future in [f for f in self._futures if f.done()]:
-            key = self._futures.pop(future)
+            on_done, on_failed = self._futures.pop(future)
             try:
                 result = future.result()
             except Exception as error:
-                self._on_future_failed(key, error)
+                on_failed(error)
             else:
-                self._on_future_done(key, result)
+                on_done(result)
 
-    def _on_future_done(self, key: tuple, result) -> None:
-        kind = key[0]
-        if kind == 'farm_jobs':
-            self._farm_loading = False
-            self._farm_rows, self._farm_error = result, None
-            from datetime import datetime
-            self._farm_updated = datetime.now().strftime('%H:%M:%S')
+    # ── what the background calls hand back (GUI thread) ──
+
+    def _farm_jobs_read(self, farm_rows: list[rows.JobRow]) -> None:
+        self._farm_loading = False
+        self._farm_rows, self._farm_error = farm_rows, None
+        from datetime import datetime
+        self._farm_updated = datetime.now().strftime('%H:%M:%S')
+        self._sync_jobs()
+        self._update_status()
+
+    def _farm_jobs_failed(self, error: Exception) -> None:
+        from tumblepipe.apps.deadline import DeadlineNotInstalled
+        self._farm_loading = False
+        self._farm_error = str(error)
+        if isinstance(error, DeadlineNotInstalled):
+            # No Deadline Client here: stop asking, the local farm still works.
+            self._farm_available = False
+            self._farm_rows = []
             self._sync_jobs()
-            self._update_status()
-        elif kind == 'farm_tasks':
-            job = self._current_job
-            if job is not None and job.id == key[1]:
-                self._show_tasks(result)
-        elif kind == 'farm_reports':
-            if self._log_key == ('farm', key[1], key[2]):
-                self._show_reports(result)
-        elif kind == 'farm_report_text':
-            if self._report_combo.currentData() == key[1]:
-                self._set_log_text(result, follow=False)
-        elif kind == 'farm_control':
-            self._say(f'{ACTION_LABELS[key[1]]} sent to the farm for {_jobs(key[2])}')
+        self._update_status()
+        log.warning('Farm Manager: reading the farm failed', exc_info=error)
+
+    def _load_farm_tasks(self, job_id: str) -> None:
+        self._submit(
+            deadline_jobs.fetch_tasks, job_id,
+            on_done=lambda tasks: self._farm_tasks_read(job_id, tasks),
+            on_failed=self._deadline_read_failed,
+        )
+
+    def _farm_tasks_read(self, job_id: str, tasks: list[rows.TaskRow]) -> None:
+        job = self._current_job
+        if job is not None and job.id == job_id:
+            self._show_tasks(tasks)
+
+    def _farm_reports_read(self, log_key: tuple, reports: list) -> None:
+        if self._log_key == log_key:
+            self._show_reports(reports)
+
+    def _report_text_read(self, path: str, text: str) -> None:
+        if self._report_combo.currentData() == path:
+            self._set_log_text(text, follow=False)
+
+    def _deadline_read_failed(self, error: Exception) -> None:
+        """A farm job's tasks, reports or report text could not be read."""
+        self._set_log_text(f'Could not read from Deadline: {error}', follow=False)
+        log.warning('Farm Manager: reading from Deadline failed', exc_info=error)
+
+    def _farm_control(self, command: str, ids: list[str]) -> None:
+        """Send ``command`` to the farm jobs ``ids`` off the GUI thread."""
+        self._submit(
+            deadline_jobs.control, command, ids,
+            on_done=lambda _output: self._farm_control_sent(command, len(ids)),
+            on_failed=lambda error: self._farm_control_failed(command, error),
+        )
+
+    def _farm_control_sent(self, command: str, count: int) -> None:
+        self._say(f'{ACTION_LABELS[command]} sent to the farm for {_jobs(count)}')
+        self._refresh_farm()
+
+    def _farm_control_failed(self, command: str, error: Exception) -> None:
+        self._say(f'{ACTION_LABELS[command]} failed on the farm', error=True)
+        QMessageBox.warning(self, 'Farm Manager', f'{ACTION_LABELS[command]} failed:\n\n{error}')
+        log.warning('Farm Manager: %s failed on the farm', command, exc_info=error)
+
+    def _farm_priority_set(self, value: int, count: int) -> None:
+        self._say(f'Priority {value} set on {_jobs(count)} on the farm')
+        self._refresh_farm()
+
+    def _farm_priority_failed(self, value: int, error: Exception) -> None:
+        self._say(f'Priority {value} not set on the farm', error=True)
+        QMessageBox.warning(self, 'Farm Manager', f'Setting priority {value} failed:\n\n{error}')
+        # Show what the farm has now, whatever part of it took.
+        self._refresh_farm()
+
+    def _presets_read(self, presets: list[priority.Preset]) -> None:
+        self._presets = presets
+
+    def _presets_failed(self, error: Exception) -> None:
+        log.debug('Farm Manager: no priority presets (no project?)', exc_info=error)
+
+    def _farm_cleanup_done(self, result: tuple[cleanup.Cleaned, int]) -> None:
+        cleaned, skipped = result
+        text = f'Clean-up: {_batches(cleaned.batches)} ({_jobs(cleaned.jobs)}) deleted from the farm'
+        if skipped:
+            text += f'; {skipped} left, no longer finished'
+        if cleaned.error:
+            self._say(f'{text}; the rest failed', error=True)
+            QMessageBox.warning(self, 'Farm Manager', f'Clean-up stopped short:\n\n{cleaned.error}')
+        else:
+            self._say(text)
+        self._refresh_farm()
+
+    def _farm_cleanup_failed(self, error: Exception) -> None:
+        self._say('Clean-up failed on the farm', error=True)
+        QMessageBox.warning(self, 'Farm Manager', f'Clean-up failed:\n\n{error}')
+        log.warning('Farm Manager: the clean-up failed on the farm', exc_info=error)
+
+    def _run_here_failed(self, error: Exception) -> None:
+        self._say('Run on this machine: not possible', error=True)
+        QMessageBox.warning(self, 'Farm Manager', f'It cannot run on this machine:\n\n{error}')
+
+    def _render_again_done(self, task_count: int, local: bool) -> None:
+        if local:
+            runner.ensure_running(self._root)
+        self._say(f'{render_again.LABEL}: {task_count} task{"s" if task_count != 1 else ""} queued again')
+        self._refresh_local()
+        if self._farm_available:
             self._refresh_farm()
-        elif kind == 'farm_priority':
-            self._say(f'Priority {result} set on {_jobs(key[2])} on the farm')
-            self._refresh_farm()
-        elif kind == 'presets':
-            self._presets = result
-        elif kind == 'farm_cleanup':
-            cleaned, skipped = result
-            text = f'Clean-up: {_batches(cleaned.batches)} ({_jobs(cleaned.jobs)}) deleted from the farm'
-            if skipped:
-                text += f'; {skipped} left, no longer finished'
-            if cleaned.error:
-                self._say(f'{text}; the rest failed', error=True)
-                QMessageBox.warning(self, 'Farm Manager', f'Clean-up stopped short:\n\n{cleaned.error}')
-            else:
-                self._say(text)
-            self._refresh_farm()
-        elif kind == 'run_here':
-            self._confirm_run_here(result)
-        elif kind == 'render_again_plan':
-            self._confirm_render_again(result)
-        elif kind == 'render_again':
-            if result:
-                runner.ensure_running(self._root)
-            self._say(f'{render_again.LABEL}: {key[1]} task{"s" if key[1] != 1 else ""} queued again')
-            self._refresh_local()
-            if self._farm_available:
-                self._refresh_farm()
-        elif kind == 'job_failure':
-            self._job_failures[key[1]] = rows.job_failure_text(result)
-            job = self._current_job
-            if job is not None and job.id == key[1]:
-                self._show_tasks(self._tasks)
-        elif kind == 'job_context':
-            self._contexts_loading.discard(key[1])
-            self._contexts[key[1]] = result
-            job = self._current_job
-            if job is not None and job.id == key[1]:
-                self._update_details()
-        elif kind == 'machine':
-            self._machine_loading = False
-            self._machine_stats = result if self._runner_working else None
-            self._update_status()
+
+    def _render_again_failed(self, error: Exception, started: bool) -> None:
+        """Planning (``started`` False) or carrying out Render again raised."""
+        self._say(f'{render_again.LABEL}: not done', error=True)
+        QMessageBox.warning(
+            self, 'Farm Manager',
+            f'{render_again.LABEL} stopped:\n\n{error}'
+            + ('\n\nThe steps before it were done.' if started else ''),
+        )
+
+    def _job_failure_read(self, job_id: str, errors: list[tuple[str, str]]) -> None:
+        self._set_job_failure(job_id, rows.job_failure_text(errors))
+
+    def _job_failure_unreadable(self, job_id: str, error: Exception) -> None:
+        self._set_job_failure(job_id, f"failed with its job (its errors could not be read: {error})")
+
+    def _set_job_failure(self, job_id: str, text: str) -> None:
+        self._job_failures[job_id] = text
+        job = self._current_job
+        if job is not None and job.id == job_id:
+            self._show_tasks(self._tasks)
+
+    def _job_context_read(self, job_id: str, context: dict) -> None:
+        self._contexts_loading.discard(job_id)
+        self._contexts[job_id] = context
+        job = self._current_job
+        if job is not None and job.id == job_id:
             self._update_details()
 
-    def _on_future_failed(self, key: tuple, error: Exception) -> None:
-        kind = key[0]
-        if kind in ('render_again_plan', 'render_again'):
-            self._say(f'{render_again.LABEL}: not done', error=True)
-            QMessageBox.warning(
-                self, 'Farm Manager',
-                f'{render_again.LABEL} stopped:\n\n{error}'
-                + ('\n\nThe steps before it were done.' if kind == 'render_again' else ''),
-            )
-            return
-        if kind == 'run_here':
-            self._say('Run on this machine: not possible', error=True)
-            QMessageBox.warning(self, 'Farm Manager', f'It cannot run on this machine:\n\n{error}')
-            return
-        if kind == 'job_failure':
-            self._job_failures[key[1]] = f"failed with its job (its errors could not be read: {error})"
-            job = self._current_job
-            if job is not None and job.id == key[1]:
-                self._show_tasks(self._tasks)
-            return
-        if kind == 'job_context':
-            self._contexts_loading.discard(key[1])
-            self._contexts[key[1]] = {}
-            return
-        if kind == 'machine':
-            self._machine_loading = False
-            self._machine_stats = None
-            log.debug('Farm Manager: sampling this machine failed', exc_info=error)
-            return
-        if kind == 'presets':
-            log.debug('Farm Manager: no priority presets (no project?)', exc_info=error)
-            return
-        if kind == 'farm_priority':
-            self._say(f'Priority {key[1]} not set on the farm', error=True)
-            QMessageBox.warning(self, 'Farm Manager', f'Setting priority {key[1]} failed:\n\n{error}')
-            # Show what the farm has now, whatever part of it took.
-            self._refresh_farm()
-            return
-        from tumblepipe.apps.deadline import DeadlineNotInstalled
-        if kind == 'farm_jobs':
-            self._farm_loading = False
-            self._farm_error = str(error)
-            if isinstance(error, DeadlineNotInstalled):
-                # No Deadline Client here: stop asking, the local farm still works.
-                self._farm_available = False
-                self._farm_rows = []
-                self._sync_jobs()
-            self._update_status()
-        elif kind == 'farm_control':
-            self._say(f'{ACTION_LABELS[key[1]]} failed on the farm', error=True)
-            QMessageBox.warning(self, 'Farm Manager', f'{ACTION_LABELS[key[1]]} failed:\n\n{error}')
-        elif kind == 'farm_cleanup':
-            self._say('Clean-up failed on the farm', error=True)
-            QMessageBox.warning(self, 'Farm Manager', f'Clean-up failed:\n\n{error}')
-        elif kind in ('farm_tasks', 'farm_reports', 'farm_report_text'):
-            self._set_log_text(f'Could not read from Deadline: {error}', follow=False)
-        log.warning('Farm Manager: %s failed', kind, exc_info=error)
+    def _job_context_failed(self, job_id: str, error: Exception) -> None:
+        self._contexts_loading.discard(job_id)
+        self._contexts[job_id] = {}
+        log.debug('Farm Manager: reading the context of %s failed', job_id, exc_info=error)
+
+    def _machine_sampled(self, stats) -> None:
+        self._machine_loading = False
+        self._machine_stats = stats if self._runner_working else None
+        self._update_status()
+        self._update_details()
+
+    def _machine_sample_failed(self, error: Exception) -> None:
+        self._machine_loading = False
+        self._machine_stats = None
+        log.debug('Farm Manager: sampling this machine failed', exc_info=error)
 
     def _update_status(self) -> None:
         parts = []
@@ -1343,7 +1388,7 @@ class ManagerWindow(QWidget):
                 if job.source == rows.LOCAL:
                     self._load_local_tasks(job)
                 else:
-                    self._submit(('farm_tasks', job.id), _fetch_farm_tasks, job.id)
+                    self._load_farm_tasks(job.id)
                 self._load_context(job)
             self._refresh_machine()
         self._update_details()
@@ -1357,7 +1402,11 @@ class ManagerWindow(QWidget):
             self._contexts[job.id] = {}
             return
         self._contexts_loading.add(job.id)
-        self._submit(('job_context', job.id), rows.read_job_context, job.data_dir, job.arguments)
+        self._submit(
+            rows.read_job_context, job.data_dir, job.arguments,
+            on_done=lambda context: self._job_context_read(job.id, context),
+            on_failed=lambda error: self._job_context_failed(job.id, error),
+        )
 
     # ── tasks ─────────────────────────────────────────────
 
@@ -1384,7 +1433,11 @@ class ManagerWindow(QWidget):
             and any(rows.failed_with_job(t, job_status) for t in tasks)
         ):
             self._job_failures[job.id] = None
-            self._submit(('job_failure', job.id), _fetch_job_errors, job.id)
+            self._submit(
+                sources.errors_of, job,
+                on_done=lambda errors: self._job_failure_read(job.id, errors),
+                on_failed=lambda error: self._job_failure_unreadable(job.id, error),
+            )
         tree = self._task_tree
         wanted = {task.index for task in tasks}
         for index in [i for i in self._task_items if i not in wanted]:
@@ -1474,7 +1527,11 @@ class ManagerWindow(QWidget):
                 self._log_key = key
                 self._log_label.setText(f'Reports of task {task.index} ({task.frames})')
                 self._set_log_text('Reading the task\'s reports from Deadline…', follow=False)
-                self._submit(('farm_reports', job.id, task.frames), _fetch_reports, job.id, task.frames)
+                self._submit(
+                    deadline_jobs.task_reports, job.id, task.frames,
+                    on_done=lambda reports: self._farm_reports_read(key, reports),
+                    on_failed=self._deadline_read_failed,
+                )
 
     # ── the log ───────────────────────────────────────────
 
@@ -1550,7 +1607,11 @@ class ManagerWindow(QWidget):
         if not path:
             return
         self._set_log_text('Reading the report…', follow=False)
-        self._submit(('farm_report_text', path), _read_report, path)
+        self._submit(
+            deadline_jobs.report_text, path,
+            on_done=lambda text: self._report_text_read(path, text),
+            on_failed=self._deadline_read_failed,
+        )
 
     # ── details ───────────────────────────────────────────
 
@@ -1763,7 +1824,11 @@ class ManagerWindow(QWidget):
             self._say(f'Already at priority {value}')
             return
         self._say(f'Setting priority {value} on {_jobs(len(ids))}…')
-        self._submit(('farm_priority', value, len(ids)), _farm_set_priority, ids, value)
+        self._submit(
+            deadline_jobs.set_priority, ids, value,
+            on_done=lambda took: self._farm_priority_set(took, len(ids)),
+            on_failed=lambda error: self._farm_priority_failed(value, error),
+        )
 
     def _add_preview_action(self, menu: QMenu, selected: list[rows.JobRow]):
         """*Preview in Cinedex* (#85): the selected job's frames, or a batch's
@@ -1848,11 +1913,10 @@ class ManagerWindow(QWidget):
         local = [row for row in selected if row.source == rows.LOCAL and command in rows.ACTIONS[rows.LOCAL]]
         farm = [row for row in selected if row.source == rows.FARM and command in rows.ACTIONS[rows.FARM]]
         if command == 'delete' and farm:
-            names = '\n'.join(f'  {row.name}' for row in farm[:12])
-            more = f'\n  … and {len(farm) - 12} more' if len(farm) > 12 else ''
+            names = '\n'.join(_first_lines([f'  {row.name}' for row in farm]))
             if QMessageBox.question(
                 self, 'Farm Manager',
-                f'Delete {len(farm)} job(s) from the Deadline farm?\n\n{names}{more}',
+                f'Delete {len(farm)} job(s) from the Deadline farm?\n\n{names}',
             ) != QMessageBox.Yes:
                 return
         if command == 'remove' and local:
@@ -1869,24 +1933,22 @@ class ManagerWindow(QWidget):
             except Exception as error:
                 QMessageBox.warning(self, 'Farm Manager', f'{ACTION_LABELS[command]} failed:\n\n{error}')
         if farm:
-            ids = [row.id for row in farm]
-            self._submit(('farm_control', command, len(ids)), _farm_control, command, ids)
+            self._farm_control(command, [row.id for row in farm])
 
     def _run_here(self, row: rows.JobRow) -> None:
         """Run on this machine (#50): plan off the GUI thread, then ask."""
         self._say(f'Reading the farm for {row.name}…')
-        self._submit(('run_here', row.id), _plan_run_here, row.id)
+        self._submit(_plan_run_here, row.id, on_done=self._confirm_run_here, on_failed=self._run_here_failed)
 
     def _confirm_run_here(self, the_plan) -> None:
         from tumblepipe.farm.manager import run_here
-        names = '\n'.join(f'  {name}' for name in the_plan.names[:12])
-        more = f'\n  … and {len(the_plan.names) - 12} more' if len(the_plan.names) > 12 else ''
+        names = '\n'.join(_first_lines([f'  {name}' for name in the_plan.names]))
         box = QMessageBox(self)
         box.setWindowTitle('Farm Manager')
         box.setIcon(QMessageBox.Question)
         box.setText(
             f'Run {_jobs(len(the_plan.names))} on this machine, with the job files '
-            f'already written?\n\n{names}{more}'
+            f'already written?\n\n{names}'
         )
         box.setInformativeText(
             'The farm copies can be suspended, so nothing on the farm waits on '
@@ -1912,8 +1974,7 @@ class ManagerWindow(QWidget):
         self._say(f'{_jobs(len(the_plan.names))} queued on this machine')
         self._refresh_local()
         if clicked is suspend:
-            ids = the_plan.ids
-            self._submit(('farm_control', 'suspend', len(ids)), _farm_control, 'suspend', ids)
+            self._farm_control('suspend', the_plan.ids)
 
     def _render_again(self, job: rows.JobRow, tasks: list[rows.TaskRow]) -> None:
         """Plan Render again off the GUI thread (it reads the batch's tasks
@@ -1922,20 +1983,20 @@ class ManagerWindow(QWidget):
             return
         self._say(f'{render_again.LABEL}: reading what follows {job.name}…')
         self._submit(
-            ('render_again_plan', job.id), _plan_render_again,
-            job, list(tasks), list(self._local_rows) + list(self._farm_rows),
+            _plan_render_again, job, list(tasks), list(self._local_rows) + list(self._farm_rows),
+            on_done=self._confirm_render_again,
+            on_failed=lambda error: self._render_again_failed(error, started=False),
         )
 
     def _confirm_render_again(self, the_plan: render_again.Plan) -> None:
-        names = '\n'.join(
+        names = '\n'.join(_first_lines([
             f'  {part.row.name}: {len(part.tasks)} task{"s" if len(part.tasks) != 1 else ""}'
-            for part in the_plan.parts[:12]
-        )
-        more = f'\n  … and {len(the_plan.parts) - 12} more' if len(the_plan.parts) > 12 else ''
+            for part in the_plan.parts
+        ]))
         box = QMessageBox(self)
         box.setWindowTitle('Farm Manager')
         box.setIcon(QMessageBox.Question)
-        box.setText(f'{render_again.LABEL}: {render_again.summary(the_plan)}?\n\n{names}{more}')
+        box.setText(f'{render_again.LABEL}: {render_again.summary(the_plan)}?\n\n{names}')
         box.setInformativeText(
             f'{the_plan.receipt_count} receipt{"s" if the_plan.receipt_count != 1 else ""} '
             'are deleted first, so the workers render those frames again into the '
@@ -1947,7 +2008,11 @@ class ManagerWindow(QWidget):
         box.exec()
         if box.clickedButton() is not go:
             return
-        self._submit(('render_again', the_plan.task_count), _carry_out_render_again, the_plan)
+        self._submit(
+            _carry_out_render_again, the_plan,
+            on_done=lambda local: self._render_again_done(the_plan.task_count, local),
+            on_failed=lambda error: self._render_again_failed(error, started=True),
+        )
 
     def _local_action(self, command: str, selected: list[rows.JobRow]) -> None:
         if command == queue.REMOVE:
@@ -2009,7 +2074,8 @@ class ManagerWindow(QWidget):
                 self._say(text)
                 self._refresh_local()
         if farm:
-            self._submit(('farm_cleanup', kind), _farm_cleanup, farm, kind)
+            self._submit(_farm_cleanup, farm, kind, on_done=self._farm_cleanup_done,
+                         on_failed=self._farm_cleanup_failed)
 
     def _confirm_cleanup(self, kind: str, chosen: list[cleanup.Removal]) -> bool:
         """Ask before a clean-up, naming its batches, the farm's and this machine's apart."""
@@ -2073,27 +2139,10 @@ class ManagerWindow(QWidget):
 
 # ── worker-thread calls (no Qt in here) ───────────────────
 
-def _fetch_farm_jobs():
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.fetch_jobs()
-
-
-def _fetch_farm_tasks(job_id: str):
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.fetch_tasks(job_id)
-
-
-def _tasks_of(row: rows.JobRow) -> list[rows.TaskRow]:
-    if row.source == rows.LOCAL:
-        return rows.local_task_rows(Path(row.folder), row.job_index)
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.fetch_tasks(row.id)
-
-
 def _plan_render_again(job: rows.JobRow, tasks: list[rows.TaskRow], all_rows: list[rows.JobRow]):
     return render_again.plan(
         job, tasks, all_rows,
-        tasks_of=_tasks_of,
+        tasks_of=sources.tasks_of,
         context_of=lambda row: rows.read_job_context(row.data_dir, row.arguments),
         exists=Path.exists,
     )
@@ -2101,60 +2150,18 @@ def _plan_render_again(job: rows.JobRow, tasks: list[rows.TaskRow], all_rows: li
 
 def _carry_out_render_again(the_plan: render_again.Plan) -> bool:
     """Carry out Render again; True when a local batch has work again."""
-    local = False
-
-    def _requeue(row: rows.JobRow, task_ids: tuple[int, ...]) -> None:
-        nonlocal local
-        if row.source == rows.LOCAL:
-            queue.request(Path(row.folder), queue.REQUEUE, row.job_index, list(task_ids))
-            local = True
-        else:
-            from tumblepipe.farm.manager import deadline_jobs
-            deadline_jobs.requeue_tasks(row.id, task_ids)
-
-    def _wait(row: rows.JobRow) -> None:
-        # The local runner waits for a job's dependencies by itself.
-        if row.source == rows.FARM:
-            from tumblepipe.farm.manager import deadline_jobs
-            deadline_jobs.pend(row.id)
-
     render_again.carry_out(
         the_plan,
         delete=lambda path: path.unlink(missing_ok=True),
-        requeue=_requeue,
-        wait=_wait,
+        requeue=sources.requeue,
+        wait=sources.pend,
     )
-    return local
+    return any(part.row.source == rows.LOCAL for part in the_plan.parts)
 
 
 def _plan_run_here(job_id: str):
-    from tumblepipe.farm.manager import deadline_jobs, run_here
+    from tumblepipe.farm.manager import run_here
     return run_here.plan(deadline_jobs.fetch_job_docs(), job_id)
-
-
-def _fetch_job_errors(job_id: str):
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.job_errors(job_id)
-
-
-def _fetch_reports(job_id: str, frames: str):
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.task_reports(job_id, frames)
-
-
-def _read_report(path: str) -> str:
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.report_text(path)
-
-
-def _farm_control(command: str, ids: list[str]) -> str:
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.control(command, ids)
-
-
-def _farm_set_priority(ids: list[str], value: int) -> int:
-    from tumblepipe.farm.manager import deadline_jobs
-    return deadline_jobs.set_priority(ids, value)
 
 
 def _load_presets() -> list[priority.Preset]:
@@ -2166,7 +2173,6 @@ def _load_presets() -> list[priority.Preset]:
 def _farm_cleanup(chosen: list[cleanup.Removal], kind: str) -> tuple[cleanup.Cleaned, int]:
     """Delete the confirmed farm batches that still qualify on a fresh read:
     ``(what was deleted, how many confirmed batches were left)``."""
-    from tumblepipe.farm.manager import deadline_jobs
     again = cleanup.recheck(deadline_jobs.fetch_jobs(), chosen, kind)
     return cleanup.delete_farm(again, deadline_jobs.control), len(chosen) - len(again)
 

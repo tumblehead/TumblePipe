@@ -85,7 +85,7 @@ class EditOps:
 
         ref, proj = self._edit_project(asset_id)
         self._activator.activate(proj)
-        open_submit_jobs_dialog([ref.uri], [ref.name], farm_grid.EDITS)
+        open_submit_jobs_dialog([ref.uri], farm_grid.EDITS)
 
     def set_master_edit(self, asset_id: str, master: bool) -> None:
         """Make the edit the project's master edit (``master``), or leave
@@ -142,16 +142,17 @@ class EditOps:
         self._refresh.grid()
         self._refresh.detail()
 
-    def create_edit(self, proj_name: str, client, fields) -> str | None:
+    def create_edit(self, proj_name: str, client, fields) -> str:
         """New Edit...: the edit, with nothing saved yet (the editor opens it
-        empty, for its first Save); its card's id, or None when refused."""
+        empty, for its first Save); its card's id. A refused name raises
+        ValueError with the reason, as every create does (the browser shows
+        it and opens the form again with what was typed)."""
         from tumblepipe.pipe import edits as pipe_edits
 
         name = str(fields.get("name") or "").strip()
         problem = pipe_edits.name_problem(name, pipe_edits.list_edits(client))
         if problem:
-            tell(problem)
-            return None
+            raise ValueError(problem)
         pipe_edits.create_edit(name, client)
         # The browser re-populates the sidebar and re-queries after a
         # create; the edit scan must not answer from before it.

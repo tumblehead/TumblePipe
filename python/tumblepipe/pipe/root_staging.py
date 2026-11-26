@@ -46,15 +46,15 @@ import logging
 from dataclasses import dataclass, field
 
 from tumblepipe.api import api
-from tumblepipe.util.io import load_json_if_exists
+from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import read_published_channel
 from tumblepipe.config.entities import is_terminal_entity
 from tumblepipe.config.scene import get_inherited_scene_ref, get_scene_by_uri, list_scenes
 from tumblepipe.config.timeline import get_frame_range
 from tumblepipe.pipe.paths import (
-    current_staged_file_path,
-    get_latest_version_path,
+    get_latest_staged_file_path,
+    latest_finished_version_path,
     get_scene_staged_path,
     latest_root_version_path,
     next_staged_file_path,
@@ -78,10 +78,10 @@ def root_export_is_stale(scene_uri: Uri) -> bool:
     if scene is None:
         return False
     current = sorted((e.asset, e.instances, e.channel) for e in scene.assets)
-    latest = get_latest_version_path(get_scene_staged_path(scene_uri))
-    context = None if latest is None else load_json_if_exists(latest / 'context.json')
-    if context is None:
+    latest = latest_finished_version_path(get_scene_staged_path(scene_uri))
+    if latest is None:
         return bool(current)
+    context = load_json(latest / 'context.json')
     exported = sorted(
         (a['asset'], a.get('instances', 1),
          read_published_channel(a, where=f'{latest}/context.json'))
@@ -91,8 +91,7 @@ def root_export_is_stale(scene_uri: Uri) -> bool:
 
 
 def _never_exported(scene_uri: Uri) -> bool:
-    latest = get_latest_version_path(get_scene_staged_path(scene_uri))
-    return latest is None or not (latest / 'context.json').exists()
+    return latest_finished_version_path(get_scene_staged_path(scene_uri)) is None
 
 
 @dataclass
@@ -228,7 +227,7 @@ def sync_roots(shot_uris=None) -> RootSync:
                 generate_root_version(shot_uri)
                 result.new_root_layers.append(shot_uri)
                 to_build.append(shot_uri)
-            elif current_staged_file_path(shot_uri) is None:
+            elif get_latest_staged_file_path(shot_uri) is None:
                 to_build.append(shot_uri)
         except Exception as error:
             log.exception("Updating the root layer of %s failed", shot_uri)

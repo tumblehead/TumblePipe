@@ -35,9 +35,9 @@ class SaveAroundRun:
     failed to save) is left for the artist.
 
     The second save keeps the first save's modification time: "stale" is a
-    workfile saved after its last export (``farm.submit.grid.publish_state``,
-    ``_publish.is_out_of_date``), and the run's own bookkeeping must not make
-    the department it just published read as stale.
+    workfile saved after its last export (``farm.submit.grid.publish_state``),
+    and the run's own bookkeeping must not make the department it just
+    published read as stale.
     """
 
     def __init__(self, hip_file=None, stat=os.stat, utime=os.utime):

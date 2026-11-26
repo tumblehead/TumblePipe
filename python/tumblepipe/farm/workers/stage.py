@@ -1,13 +1,12 @@
 """Build a shot's render stages in hython (``stage_houdini.py``), one per
 channel, and submit the render pipeline over them: a standalone render."""
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import sys
 
 from tumblepipe.api import (
     path_str,
-    api
+    project_temp_dir,
 )
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.io import store_json
@@ -41,10 +40,7 @@ def main(config: dict, _frame_span: BlockRange) -> int:
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Create one output stage per channel. A single stage composing
         # every channel would render the last channel's opinions for all

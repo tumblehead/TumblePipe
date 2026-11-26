@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Callable
 
 from tumblepipe.pipe.houdini.ui.report import run_in_background, run_on_main_thread
 
+from .types import tag_value
+
 if TYPE_CHECKING:
     from .clients import ClientPool
     from .houdini import ProjectActivator
@@ -55,11 +57,7 @@ def timeline_sequence(selected_uri, view_tags) -> str | None:
         and selected_uri.segments[0] == "shots"
     ):
         return selected_uri.segments[1]
-    return next(
-        (t.partition(":")[2] for t in view_tags or ()
-         if t.startswith("sequence:") and t.partition(":")[2]),
-        None,
-    )
+    return tag_value(view_tags or (), "sequence") or None
 
 
 class Playback:
@@ -216,10 +214,7 @@ class Playback:
                 proj = None if selected_id is None else self._resolver.project_for(selected_id)
                 uri = None if proj is None else self._resolver.uri_for_ready(selected_id)
                 if proj is None:
-                    view_project = next(
-                        (t.partition(":")[2] for t in view_tags or ()
-                         if t.startswith("project:")), "",
-                    )
+                    view_project = tag_value(view_tags or (), "project")
                     proj = self._registry.get(view_project) if view_project else None
                 if proj is None and session_project:
                     proj = self._registry.get(session_project)

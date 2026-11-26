@@ -61,7 +61,7 @@ impl Item {
     }
 
     pub fn path(&self, roots: &ProjectRoots) -> PathBuf {
-        let mut path = roots.path(&self.root).map(Path::to_path_buf).unwrap_or_default();
+        let mut path = roots.path(&self.root).to_path_buf();
         path.extend(self.rel.split('/'));
         path
     }

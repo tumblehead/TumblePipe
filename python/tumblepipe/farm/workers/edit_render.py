@@ -9,7 +9,6 @@ in the project, so a worker needs nothing of its own but the player, which
 the package ships in ``bin/<platform>/``.
 """
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import shutil
 import subprocess
@@ -17,7 +16,8 @@ import sys
 
 from tumblepipe.api import (
     path_str,
-    api
+    api,
+    project_temp_dir,
 )
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
@@ -79,10 +79,7 @@ def main(edit_uri: Uri, version: str, output_path: Path) -> int:
     print(f'  ocio={ocio}')
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
         render_path = temp_path / 'render'
         render_path.mkdir()
 

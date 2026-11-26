@@ -95,7 +95,7 @@ def main() -> int:
     })
 
     # ── 1: what pins the cuts ─────────────────────────────
-    win = mod.SubmitJobsDialog([Uri.parse(plain)], ["sh010"], "shots", department=first)
+    win = mod.SubmitJobsDialog([Uri.parse(plain)], "shots", department=first)
     win.show()
     settle()
     pane = win._pane("shots")
@@ -173,7 +173,7 @@ def main() -> int:
 
     # ── 1b: th::import_render's Render cut ────────────────
     win = mod.SubmitJobsDialog(
-        [Uri.parse(plain)], ["sh010"], "shots", department=first, render_department=first,
+        [Uri.parse(plain)], "shots", department=first, render_department=first,
     )
     win.show()
     settle()
@@ -181,6 +181,86 @@ def main() -> int:
     render_cut = pane._fields["render_department"]
     check("1. a Render cut asked for outright pins the Render cut",
           render_cut.pinned and render_cut.value() == first, f"{render_cut.pinned} {render_cut.value()}")
+    check("1. a row renders up to the pinned Render cut",
+          pane._cut(plain, "render_department") == first)
+    win.reject()
+
+    # ── 6: two shots: the camera and scene values per entity ──
+    win = mod.SubmitJobsDialog([Uri.parse(plain), Uri.parse(without_last)], "shots")
+    win.show()
+    settle()
+    pane = win._pane("shots")
+    pane._ticks = {(plain, grid.RENDER), (without_last, grid.RENDER)}
+    refresh(pane)
+    keys = pane._camera_keys()
+    check("6. both ticked shots are read", sorted(k[0] for k in keys) == [plain, without_last], str(keys))
+    by_uri = {k[0]: k for k in keys}
+    edit = pane._rnd_camera.lineEdit()
+
+    def show(cameras: dict) -> None:
+        pane._cameras.clear()
+        pane._cameras.update({by_uri[u]: c for u, c in cameras.items()})
+        pane._camera_pending = {}
+        pane._show_camera(keys)
+        settle()
+
+    a = render_camera.RenderCamera(plain, "/cameras/a", "light",
+                                   settings={"samples": (64, "light"), "mblur": (True, "light")})
+    b = render_camera.RenderCamera(without_last, "/cameras/b", "anim",
+                                   settings={"samples": (256, "anim")})
+    show({plain: a, without_last: b})
+    tip = pane._rnd_camera.toolTip()
+    check("6. differing cameras: the empty field says they vary",
+          edit.placeholderText() == f"varies: {mod.PER_ENTITY_TEXT}", edit.placeholderText())
+    check("6. the tooltip names each shot's camera, department and channel",
+          f"sh010: /cameras/a  (light, {by_uri[plain][1]})" in tip
+          and f"sh020: /cameras/b  (anim, {by_uri[without_last][1]})" in tip, tip)
+    samples = pane._rnd_samples
+    check("6. Samples says the scene's values vary, low to high",
+          samples.specialValueText() == resolve.scene_placeholder([64, 256], "int"),
+          samples.specialValueText())
+    check("6. Samples' tooltip names each shot's value and where it is authored",
+          "sh010: 64  (light)" in samples.toolTip() and "sh020: 256  (anim)" in samples.toolTip(),
+          samples.toolTip())
+    mblur_label = pane._scene_fields["mblur"][1]
+    check("6. Motion blur's label carries the scene's values",
+          pane._rnd_mblur.text() == f"{mblur_label} ({resolve.scene_placeholder([True, None], 'bool')})",
+          pane._rnd_mblur.text())
+    show({plain: a, without_last: render_camera.RenderCamera(without_last, None, error="boom")})
+    check("6. a shot whose lookup failed is named, and left out of the placeholder",
+          edit.placeholderText() == "from scene: /cameras/a"
+          and "sh020: not read  boom" in pane._rnd_camera.toolTip()
+          and "sh020: not read  boom" in samples.toolTip(),
+          f"{edit.placeholderText()} | {pane._rnd_camera.toolTip()}")
+    show({plain: a, without_last: render_camera.RenderCamera(without_last, None, "anim")})
+    check("6. a shot naming no camera says so",
+          "sh020: none named" in pane._rnd_camera.toolTip(), pane._rnd_camera.toolTip())
+    show({plain: a})
+    check("6. one shot still being read: the field says so, the scene values are plain",
+          edit.placeholderText() == "Reading…" and samples.specialValueText() == mod.FROM_SCENE_TEXT,
+          f"{edit.placeholderText()} {samples.specialValueText()}")
+
+    # ── 7: what Submit refuses before the review ─────────
+    notices: list[str] = []
+    win.notice = lambda title, text: notices.append(title)
+    pane._ticks = set()
+    refresh(pane)
+    pane.submit()
+    pane._ticks = {(plain, grid.RENDER)}
+    refresh(pane)
+    pane._rnd_preview.setChecked(False)
+    pane._rnd_full.setChecked(False)
+    refresh(pane)
+    pane.submit()
+    pane._rnd_full.setChecked(True)
+    checked = pane._rnd_channels.checked_items()
+    pane._rnd_channels.set_checked([])
+    refresh(pane)
+    pane.submit()
+    pane._rnd_channels.set_checked(checked)
+    refresh(pane)
+    check("7. Submit refuses no ticks, no render range and no channel, in that order",
+          notices == ["Nothing ticked", "No render range", "No channel to render"], str(notices))
     win.reject()
 
     failed = results.count(False)

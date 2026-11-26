@@ -372,13 +372,7 @@ pub fn read_json(path: &Path) -> Option<Value> {
 /// Every edit document: the working versions (the `edits` root) and the
 /// published ones (`export/edits`), with their `.otio`.
 fn edit_files(roots: &ProjectRoots) -> Vec<PathBuf> {
-    let mut folders = Vec::new();
-    if let Some(edits) = roots.path("edits") {
-        folders.push(edits.to_path_buf());
-    }
-    if let Some(export) = roots.path("export") {
-        folders.push(export.join("edits"));
-    }
+    let folders = [roots.path("edits").to_path_buf(), roots.path("export").join("edits")];
     let mut files = Vec::new();
     for folder in folders {
         fsx::os_walk(&folder, |dir| {
@@ -487,7 +481,7 @@ fn pinned(
             by_edit.extend(index.matching(&pin));
         }
     }
-    let manifest = roots.path("edit").and_then(|edit| read_json(&edit.join("manifest.json")));
+    let manifest = read_json(&roots.path("edit").join("manifest.json"));
     for (shot, layer, department, version) in manifest_pins(manifest.as_ref()) {
         // The shot's URI (`entity:/shots/<sequence>/<shot>`), as its folders.
         let tail = shot.split_once(':').map_or(shot.as_str(), |(_, t)| t);
@@ -763,7 +757,8 @@ pub fn plan(
 ) -> Result<CategoryPlan, String> {
     let mut out = CategoryPlan::new(CATEGORY.key, CATEGORY.title, "version");
     out.payload = Payload::Renders(None);
-    let (Some(render_root), Some(inventory)) = (roots.path("render"), inventory) else { return Ok(out) };
+    let render_root = roots.path("render");
+    let Some(inventory) = inventory else { return Ok(out) };
     out.payload = Payload::Renders(Some(render_root.to_path_buf()));
     let (units, movies) = list_units(inventory)?;
     let mut notes = Vec::new();

@@ -17,17 +17,8 @@ th_cleanup.workspace = true
 # Typed sums in the number fields, as in Cinedex's.
 th_pipe.workspace = true
 primer.workspace = true
-# The window icon's PNGs, read for X11 (`src/app_icon.rs`), as Cinedex does.
-png = "0.18"
-
-# The Dock icon (`src/app_icon.rs`). The objc2 winit already links.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.5.2"
-
-# The X11 window icon (`src/app_icon.rs`): x11rb's own connection, no
-# libX11 to link. Already in the tree through winit.
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-x11rb = "0.13"
+# The window icon (`src/app_icon.rs`), as Cinedex's.
+th_window.workspace = true
 
 # The Windows executable's icon resource (`build.rs`).
 [build-dependencies]

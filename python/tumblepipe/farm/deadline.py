@@ -1,7 +1,7 @@
 """Farm-side Deadline helpers: the job that runs a farm worker.
 
-`tumblepipe.apps.deadline` is a generic Deadline submission wrapper. The farm
-layer is what knows a worker runs from an HPM package, so HPM manifest
+`tumblepipe.farm.job` is the generic job model, and `tumblepipe.apps.deadline`
+submits it to Deadline. The farm layer is what knows a worker runs from an HPM package, so HPM manifest
 generation lives here, not in the generic wrapper: :func:`farm_job` builds a
 Job and attaches the hpm.toml the HPM plugin installs on a worker cache miss.
 The generic `submit()` only writes `job.manifest` into the shared job dir and
@@ -14,7 +14,7 @@ from pathlib import Path
 import tomli_w
 
 from tumblepipe.api import default_client, path_str
-from tumblepipe.apps.deadline import Job, hpm_package_spec
+from tumblepipe.farm.job import Job, hpm_package_spec
 from tumblepipe.apps.houdini import resolve_houdini_version
 from tumblepipe.farm.env import get_base_env
 from tumblepipe.naming import random_name

@@ -184,3 +184,73 @@ __all__ = [
     'validate_layout_publish',
     'validate_rig_character',
 ]
+
+
+def node_stage(native):
+    """The cooked stage on ``native``'s ``IN_stage`` input; None when
+    nothing is connected or what feeds it did not cook."""
+    stage_node = native.node('IN_stage')
+    if stage_node is None:
+        return None
+    return stage_node.stage()
+
+
+def validate_node_stage(native, entity_uri, department: str) -> ValidationResult | None:
+    """Validate the stage on ``native``'s input with the validators of
+    ``entity_uri``'s context and ``department``; None when there is no
+    stage to validate."""
+    from tumblepipe.config.department import entity_context
+
+    stage = node_stage(native)
+    if stage is None:
+        return None
+    return validate_stage_for_department(
+        stage.GetPseudoRoot(), entity_context(entity_uri), department,
+        {'entity_uri': str(entity_uri)},
+    )
+
+
+def show_validation(entity_node, native) -> None:
+    """The Validate button of a node that publishes a stage: validate its
+    input for its entity and department and show the outcome. A message
+    when it passed (the warnings, when there were any), the read-only
+    issues dialog when it failed. An unresolved Entity or Department raises
+    the node's NodeError (the button shows it as a message)."""
+    import hou
+
+    entity_uri = entity_node.require_entity_uri()
+    department = entity_node.require_department_name()
+    result = validate_node_stage(native, entity_uri, department)
+    if result is None:
+        hou.ui.displayMessage(
+            "No stage to validate: connect the node's input and make "
+            'sure what feeds it cooks.',
+            severity=hou.severityType.Warning,
+        )
+        return
+    if result.passed:
+        # A warning does not fail validation, but saying "no issues
+        # found" while holding a non-empty issue list is a lie.
+        if result.warnings:
+            hou.ui.displayMessage(
+                result.format_message(),
+                severity=hou.severityType.Warning,
+                title='Validation Passed With Warnings',
+            )
+        else:
+            hou.ui.displayMessage(
+                'Validation passed - no issues found.',
+                severity=hou.severityType.Message,
+                title='Validation Passed',
+            )
+        return
+    from tumblepipe.pipe.houdini.ui.validation_dialog import (
+        ValidationConfirmDialog,
+    )
+    ValidationConfirmDialog(
+        validation_result=result,
+        department=department,
+        entity_name=entity_uri.segments[-1],
+        parent=hou.qt.mainWindow(),
+        read_only=True,
+    ).exec_()

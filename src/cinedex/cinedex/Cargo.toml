@@ -19,6 +19,8 @@ futures = "0.3"
 th_playlist.workspace = true
 th_edit.workspace = true
 th_pipe.workspace = true
+# The window icon (`src/app_icon.rs`) and the X11 window lookup `src/raise.rs` uses.
+th_window.workspace = true
 ocio-rs.workspace = true
 # Render Edit's frames, and its render.json.
 png = "0.18"

@@ -5,6 +5,201 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.132.0
+
+### Playblast delegate: one C entry draws a frame
+
+The delegate core (`th_delegate_core`) no longer exports `th_render` or
+`th_render_ids`; `th_render_scene` is the one entry, and the shim already
+called only it. A caller of the old entries passes null curves and a
+count of 0: `th_render(f, m, n, color, depth, cache)` is
+`th_render_scene(f, m, n, NULL, 0, color, depth, NULL, NULL, cache)`, and
+`th_render_ids` adds its `ids` and `cancel` in the same places. The frame
+drawn is the same. In Rust, `ThFrame::new(width, height, world_to_clip,
+view_to_world)` builds a frame with everything else off.
+
+### Archive roots: every purpose has one; shared helpers in util
+
+`archive.roots.ProjectRoots.get(purpose)` returns the root of every
+purpose `storage.json` names, also one placed on a folder another purpose
+already has (say `export` on the project folder), and raises `KeyError` for
+an unknown purpose instead of returning None. `ProjectRoots.roots` is still
+each folder once, the ones to walk; the new `purposes` field has them all.
+Clean Up Project's Rust twin (`th_cleanup::roots::ProjectRoots`) does the
+same: `get` and `path` return the root itself (panicking on an unknown
+purpose), `purposes` has every one, and `export_path` no longer guesses
+`<project>/export`.
+The byte-size text is `tumblepipe.util.text.human_bytes` (no longer
+re-exported as `tumblepipe.cleanup.human`), the ordinal is
+`util.text.ordinal`, and the `$HFS/bin` DLL setup is
+`util.hfs.add_houdini_dll_directory`. The printed text is unchanged.
+
+### Paths: one name for the latest staged build
+
+`pipe.paths.current_staged_path` and `current_staged_file_path` are gone:
+they were the same functions as `get_latest_staged_path` and
+`get_latest_staged_file_path`, which stay. Rename the call; the result is
+the same (the newest finished staged build of the channel, or None). The
+staged directory's URI, `export:/<entity>/_staged/<channel>`, now has its
+own builder, `pipe.paths.get_staged_uri(entity_uri, channel_name)`. Nothing
+stored changes.
+
+### Entity sheet: one cell API for rows, groups and all shots
+
+`config.entity_sheet.Sheet` edits every level through one API keyed by a
+target: an entity row's id, `entity_sheet.GroupKey(name)` for a sequence
+or category, or `entity_sheet.EVERYONE` for all shots.
+`cell(target, name)` returns a `Cell(value, state, source, inherited)`;
+`set_value`, `reset`, `render_pins` and `render_pending` take the target.
+The per-level methods are gone: `group_value` / `group_state` /
+`group_source` and `everyone_value` / `everyone_state` / `everyone_source`
+become `cell(...)`; `set_group_value` / `set_everyone_value` become
+`set_value(GroupKey(g) | EVERYONE, ...)`; `reset_group` / `reset_everyone`
+become `reset(...)`; `group_render_pins` / `everyone_render_pins` /
+`group_render_pending` become `render_pins(...)` / `render_pending(...)`,
+and `render_pins` / `render_pending` take a row's id, not the row.
+`GroupKey` moved from `asset_browser.entity_editor`. Nothing stored
+changes. For scripts that drive the sheet.
+
+### Asset Browser: a refused create raises instead of a dialog
+
+`PipelineCatalog.create_entity` (New Asset, Shot, Category, Sequence, Multi,
+Root, Edit) refuses by raising `ValueError` with the reason: an unknown
+project, an empty Category, Sequence or Name, a name the creation check
+refuses, or a Multi or Root that exists. It used to show a blocking
+`hou.ui.displayMessage` and return None. TumbleTrove (0.66 and later, so
+every version TumblePipe supports) reports the raise and opens the form
+again with what was typed, which a dialog plus None lost. A project whose
+config cannot be read raises its `CatalogInitError` the same way. Scripts
+that call `create_entity` and treated None as "refused" catch `ValueError`
+instead; a None return still means it was made with no card to select (a
+Category, a Sequence, a Multi).
+
+### Asset Browser: a mangled card id raises instead of being looked up as an entity
+
+The Pipeline catalog parses every card id once (`asset_browser.card_refs.card_ref`:
+a library card, a node, a Multi, a Root or an entity) and every hook routes
+on that. A card id with a container's or a library kind's prefix that does
+not parse as one (`group:Proj` with no path, a `recipe:` id with no
+`context/slug`) now raises `asset_browser.uris.MalformedCardId` in every
+hook but `project_for_ref`, which answers None (a stale favourite with
+such an id stays hidden, as before); it used to fall through to the entity lookups in some hooks and raise
+in others. The catalog mints every card id, and well-formed ids (what the
+browser stores in favourites, presets and drag payloads) are unchanged.
+`containers.parse` raises it too for such an id, `LibraryKinds.for_id` raises
+it instead of returning None, and `LibraryKinds.owns` is removed.
+
+### th::animate's widths, visibility and primvars in their own modules
+
+`pipe.houdini.lops.animate_points` is split along its seams; the HDA calls
+the same names as before (`apply`, `rest_gate`, `current_widths`,
+`remainder_shapes`, `placed_shapes`, `import_pattern`, `on_loaded`), so
+scenes and unlocked dives are unaffected. Python code importing the moved
+helpers imports them from their new modules:
+
+- `animate_widths`: `read_widths`, `width_source`, `widths_of`,
+  `width_conflict`, `normalize_widths`, `vertex_widths`, `missing_width`,
+  `MISSING_WIDTH`, `WIDTH_SOURCES`;
+- `animate_visibility`: `read_visibility`, `said_visibility`,
+  `visibility_bases`, `author_visibility`, `shape_visibility`, `can_split`,
+  `split_visibility`, `hole_bases`, `author_parts`, `unsplit_message`;
+- `animate_primvars`: `asset_primvars`, `filler_primvars`,
+  `remove_primvars`, `primvar_names`, `prim_topology`, `primvar_fits`;
+- `animate_geometry`: the stamps (`STAMP`, `VERTEX_STAMP`, `PRIM_STAMP` and
+  their counts and primvars), `packed_leaves`, `has_packed`, `enum_name`.
+
+Helpers other modules reach are public under distinct names:
+`animate_invoke.enclosing_animate` (the th::animate a node is inside) and
+`animate_points.parent_animate` (a LOP's direct parent) replace the two
+`_animate_node`; `animate_invoke.prim_name` replaces both `_name`;
+`import_rig.shot_stage`, `stage_children` and `imported_asset_uri`,
+`animate_points.output_node_type` and `incoming_stage`, and
+`import_render.is_import_render` drop their underscore.
+`import_rig._refresh_ghost` is removed: call `animate_ghost.refresh_ghost`.
+`import_rig._place_rigs` keeps its name, since th::layout_rigs writes it
+into the Python SOP of each dive it builds.
+
+### Every th:: node button shows a NodeError as a message
+
+The parm callbacks of the th:: HDAs (export_layer, layer_split, the import
+nodes, sop_modify, lookdev_studio, render_settings, the texture nodes and the
+rest) are decorated with `pipe.houdini.nodes.button(title)`: in a Houdini
+session a `NodeError` they raise (an Entity or Department that does not
+resolve, a missing input) shows as a warning dialog instead of a traceback,
+and the callback returns None. Code that calls one of these module functions
+in a GUI session and relied on the exception propagating gets None instead;
+hython and the farm still get the exception. Dropping an Asset Favorite from
+the radial no longer runs the asset's first action when the catalog's drop
+raised: the failure is reported and the drop stops, so a half-done drop is
+not imported twice.
+
+### th::layer_split exports on 1s, like th::export_layer
+
+A shared layer (th::layer_split) is now cooked on every frame whatever the
+node's render step, as th::export_layer's publishes have been since the
+stage-cache fix: a shared layer from a node set to step 2 or more now
+carries every frame, so a render can sample any of them. It also cooks
+TumbleRig sims From Start Frame, checks the ROP wrote its file and flattens
+COP texture folders next to the layer, as an export does. An export to
+several targets (Targets set to Chosen, All shots or All assets) now cooks
+sims From Start Frame too, as a single export did. Both nodes cook through
+`pipe.houdini.lops.layer_cook.LayerWriter.cook_layer`; the HDA parms are
+unchanged.
+
+### Farm workers: shared receipt, environment and temp-folder helpers
+
+`tumblepipe.apps.exr._run` is public as `run_oiiotool`; code (or a test)
+that called or replaced `exr._run` uses `exr.run_oiiotool`. A worker started
+without `OCIO` now fails with `farm.worker.WorkerEnvError` ("OCIO environment
+variable not set") where it raised an `AssertionError`, which `python -O`
+would have skipped. New shared helpers: `farm.worker.missing_receipts`,
+`farm.worker.unwritten`, `farm.worker.require_env`, and
+`tumblepipe.api.project_temp_dir()`, a fresh folder under the project's
+`temp:/` that every worker, submitter and Houdini node now uses.
+
+### The farm job model moved to `tumblepipe.farm.job`
+
+`Job`, `Batch`, `open_job_folder`, `write_job_files`, `job_extra_info`,
+`extra_info_entries`, `hpm_package_spec` and `HPM_VERSION` moved from
+`tumblepipe.apps.deadline` to `tumblepipe.farm.job`, since the local farm
+uses them as much as Deadline does; `log_progress` moved to
+`tumblepipe.apps.app`. `apps.deadline` keeps `Deadline`, `deadline_command`,
+`query`, `deadline_setup_problem` and `DeadlineNotInstalled`. The unused
+`Deadline.list_pools`/`list_groups` are removed (pools come from
+`config.farm`). Code importing the moved names from `apps.deadline` imports
+them from the new module. Job files and Deadline job keys are unchanged.
+
+### Farm Submit: one publish spelling, every batch field and look key required
+
+`batch_submit.submit_entity_batch` publishes only the ticked departments
+(`pub_departments`). The old "up to" spelling (`pub_department`, with its
+skip of an up-to-date prefix) is gone, with `PublishPlan.skip_up_to_date`
+and `pipelines.publish.is_out_of_date`; the Farm Submit field
+`pub_department` is gone too, so the entity property
+`submission.publish.department` is no longer read (stored values stay,
+untouched). A caller building settings by hand sends every section tick
+(`comp` included) and each ticked section's batch fields
+(`render_step`, `frame_list`, `preview_frame_list`, `into_version`,
+`comp_step`, `comp_preview`, `comp_preview_frame_list`), as
+`farm.submit.settings.resolve_settings` does.
+
+A playblast look carries every key (`specs.playblast.valid_look`): the
+defaults for a look submitted before a key existed are gone, with the
+`specs.playblast.look_*` getters, `specs.collapse.playblast_look` and the
+`look=None` of `preview.playblast_config` (and `light`'s default in
+`preview.collapse_playblast_input`). A farm job runs the package version it
+was submitted with, so no job in flight is affected.
+
+The unused pre-flight table API is gone (`settings.preflight_fields`,
+`settings.varying_fields`, `Field.preflight`), and so are the forwarding
+aliases `settings.into_version`, `settings.repair_errors` and
+`settings.STEPPED_NOT_PUBLISHED`: use `specs.submission.into_version`,
+`specs.submission.repair_problems` and `specs.frame_ranges.STEPPED_NOT_PUBLISHED`.
+
+Fixed: Farm Submit now warns about a ticked publish department the entity
+is not assigned; the warning read the removed `pub_department` and never
+fired.
+
 ## v1.131.0
 
 ### Farm configs refused with ValueError, checked at build

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tumblepipe.api import path_str
-from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.job import Job
 from tumblepipe.config.timeline import BlockRange, require_fps
 from tumblepipe.farm.jobs import mp4 as mp4_job
 from tumblepipe.farm.jobs import notify as notify_job

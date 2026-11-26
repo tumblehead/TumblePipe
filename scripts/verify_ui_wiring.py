@@ -81,7 +81,7 @@ def run() -> dict[str, list[str]]:
         if first is None:
             report[f'Farm Submit ({context})'] = ['(skipped: the project has none)']
             continue
-        scene.open_submit_jobs_dialog([first[0]], [first[1]], context)
+        scene.open_submit_jobs_dialog([first[0]], context)
         dialog = scene._submit_dialog
         dialog.move(-4000, 0)
         report[f'Farm Submit ({context})'] = unwired(dialog)

@@ -10,7 +10,6 @@ Terminology:
 - References: What depends on an entity (reverse: "what uses me")
 """
 
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -21,9 +20,7 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.config.department import list_entity_department_names
 from tumblepipe.config.entities import get_entity_type, is_terminal_entity
-from tumblepipe.pipe.paths import is_finished_version, latest_export_path
-
-logger = logging.getLogger(__name__)
+from tumblepipe.pipe.paths import get_export_uri, latest_finished_version_path
 
 
 @dataclass
@@ -132,17 +129,12 @@ def _latest_finished_export(entity_uri: Uri, department_name: str) -> Optional[P
 
     scan walks every entity in the project, so one unreadable export failed
     every shot build over an unrelated asset (an external user's rig export
-    left ``rig/v0006`` empty and no shot in the project would build).
-    ``latest_export_path`` reads past a newer unfinished folder; this also
-    skips the one it falls back to when no version is finished.
+    left ``rig/v0006`` empty and no shot in the project would build). So
+    the strict rule: an unfinished folder is never read, even when no
+    version is finished.
     """
-    version_path = latest_export_path(entity_uri, DEFAULT_CHANNEL, department_name)
-    if version_path is None:
-        return None
-    if not is_finished_version(version_path):
-        logger.warning('Skipping unfinished export %s (no %s)', version_path, VERSION_MARKER)
-        return None
-    return version_path
+    return latest_finished_version_path(api.storage.resolve(
+        get_export_uri(entity_uri, DEFAULT_CHANNEL, department_name)))
 
 
 def scan() -> Graph:

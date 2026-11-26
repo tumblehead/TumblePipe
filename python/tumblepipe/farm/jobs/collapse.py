@@ -10,7 +10,7 @@ def build(config, paths, staging_path):
     """The collapse job for ``config`` (``specs.collapse.is_valid_config``)."""
     checked(collapse_spec.is_valid_config, config, 'collapse')
     entity = config['entity']
-    previews = [key for key in ('render', 'playblast') if key in config]
+    previews = [key for key in ('render', 'turntable', 'playblast') if key in config]
     job = farm_job('collapse', config, staging_path,
         name = f"collapse {'+'.join(previews)} {entity['uri']} {entity['department']}",
         pool = config['settings']['pool_name'],

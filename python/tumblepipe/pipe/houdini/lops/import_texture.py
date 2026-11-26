@@ -23,6 +23,7 @@ from pathlib import Path
 from tumblepipe.pipe import textures as T
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.nodes import button
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,7 @@ def _node(kwargs) -> ImportTexture:
     return ImportTexture(kwargs['node'])
 
 
+@button('Import Texture')
 def on_source_changed(kwargs):
     """Owner, Entity or Set changed: pin that set's newest version."""
     node = _node(kwargs)
@@ -142,14 +144,17 @@ def on_source_changed(kwargs):
     node.update()
 
 
+@button('Import Texture')
 def on_version_changed(kwargs):
     _node(kwargs).sync_layer()
 
 
+@button('Import Texture')
 def update(kwargs):
     _node(kwargs).update()
 
 
+@button('Import Texture')
 def select(kwargs):
     node = _node(kwargs)
     if node.pick_entity(title='Select Asset', contexts=('assets',)):

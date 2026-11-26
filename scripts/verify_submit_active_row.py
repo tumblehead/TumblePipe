@@ -137,7 +137,7 @@ def highlighted(pane, image, uri: str) -> bool:
 
 def open_dialog(opened: list[str], active: list[str]):
     win = mod.SubmitJobsDialog(
-        [Uri.parse(u) for u in opened], [u.rsplit("/", 1)[-1] for u in opened], "shots",
+        [Uri.parse(u) for u in opened], "shots",
         tick_kinds=(grid.RENDER,) if opened else (), active=active,
     )
     win.show()

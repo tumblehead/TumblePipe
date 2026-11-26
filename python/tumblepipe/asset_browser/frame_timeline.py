@@ -39,7 +39,7 @@ from tumbletrove.asset_browser.core.theme import (
 from tumblepipe.asset_browser.tooltips import wrapped
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.submit import frame_selection as fs
-from tumblepipe.farm.submit.settings import nth
+from tumblepipe.util.text import ordinal
 
 #: The widget's height: a track and a row of frame numbers under it.
 HEIGHT = 32
@@ -326,7 +326,7 @@ class FrameTimeline(QWidget):
         if view.caption:
             shown += f" ({view.caption})"
         if self._step > 1:
-            shown += f", every {nth(self._step)} frame"
+            shown += f", every {ordinal(self._step)} frame"
         if view.mixed:
             shown += ". Each shot uses only the frames inside its own range"
         return shown + "."

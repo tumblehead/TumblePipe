@@ -21,6 +21,7 @@ from tumblepipe.pipe.paths import (
     get_export_uri,
     SHARED_CHANNEL,
 )
+from tumblepipe.pipe.houdini.nodes import button
 
 def _valid_version_path(path: Path) -> bool:
     context_path = path / 'context.json'
@@ -46,15 +47,7 @@ class ImportLayer(EntityNode):
         super().__init__(native)
 
     def list_department_names(self) -> list[str]:
-        entity_type = self.get_entity_type()
-        if entity_type is None:
-            return ['from_context']
-        context_name = 'assets' if entity_type == 'asset' else 'shots'
-        names = [
-            d.name for d in self.scoped_departments(context_name)
-            if d.publishable
-        ]
-        return ['from_context'] + names
+        return self.department_choices(publishable=True)
 
     def list_version_names(self) -> list[str]:
         entity_uri = self.get_entity_uri()
@@ -343,16 +336,19 @@ def on_created(raw_node):
     node = ImportLayer(raw_node)
     node._initialize()
 
+@button('Import Layer')
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportLayer(raw_node)
     node.execute()
 
+@button('Import Layer')
 def open_location(kwargs):
     raw_node = kwargs['node']
     node = ImportLayer(raw_node)
     node.open_location()
 
+@button('Import Layer')
 def select(kwargs):
     """Entity button: pick the entity, then import it."""
     node = ImportLayer(kwargs['node'])

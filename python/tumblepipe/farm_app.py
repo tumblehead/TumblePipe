@@ -17,18 +17,8 @@ publish, playblast and render on the farm.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-from pathlib import Path
-
-
-def _add_houdini_dll_directory() -> None:
-    """Let PySide6 and ``pxr`` load: Python 3.8+ on Windows ignores PATH."""
-    hfs = os.environ.get('HFS')
-    if hfs and hasattr(os, 'add_dll_directory'):
-        bin_dir = Path(hfs) / 'bin'
-        if bin_dir.is_dir():
-            os.add_dll_directory(str(bin_dir))
+from tumblepipe.util.hfs import add_houdini_dll_directory
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -39,13 +29,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def preselection(entities: list[str], context: str) -> tuple[list, list[str]]:
-    """The dialog's ``(entity_uris, entity_names)`` for ``--entity`` values:
-    each once, in the order given, named by its last segment. Raises
+def preselection(entities: list[str], context: str) -> list:
+    """The dialog's entity URIs for ``--entity`` values: each once, in the
+    order given. Raises
     ``ValueError`` for one that is no entity of ``context`` (``entity:/shots/…``
     for shots), so a wrong one is said, not dropped."""
     from tumblepipe.util.uri import Uri
-    uris, names, seen = [], [], set()
+    uris, seen = [], set()
     for raw in entities:
         uri = Uri.parse(raw)
         segments = uri.segments
@@ -55,14 +45,13 @@ def preselection(entities: list[str], context: str) -> tuple[list, list[str]]:
             continue
         seen.add(str(uri))
         uris.append(uri)
-        names.append(segments[-1])
-    return uris, names
+    return uris
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    _add_houdini_dll_directory()
+    add_houdini_dll_directory()
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
@@ -71,11 +60,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         from tumblepipe.asset_browser.submit_jobs_dialog import SubmitJobsDialog
-        uris, names = preselection(args.entity, args.context)
+        uris = preselection(args.entity, args.context)
         if uris:
-            dialog = SubmitJobsDialog(uris, names, args.context)
+            dialog = SubmitJobsDialog(uris, args.context)
         else:
-            dialog = SubmitJobsDialog([], [], args.context, tick_kinds=())
+            dialog = SubmitJobsDialog([], args.context, tick_kinds=())
     except Exception as error:
         QMessageBox.critical(None, 'Farm Submit', f'Could not open the Farm Submit grid:\n\n{error}')
         return 1

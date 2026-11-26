@@ -8,7 +8,14 @@ Roots, choose which assets each shot imports, set up Multis, rename and
 retire, then **Apply**. The [Database Editor](config-editor.md) can change the same data
 one raw property at a time; this is the friendly way. Source:
 [`entity_editor.py`](../../python/tumblepipe/asset_browser/entity_editor.py)
-(window) and [`entity_sheet.py`](../../python/tumblepipe/config/entity_sheet.py)
+(window and the Assets / Shots tables), with
+[`entity_editor_dialogs.py`](../../python/tumblepipe/asset_browser/entity_editor_dialogs.py),
+[`entity_editor_render.py`](../../python/tumblepipe/asset_browser/entity_editor_render.py)
+(Render settings panel),
+[`entity_editor_multis.py`](../../python/tumblepipe/asset_browser/entity_editor_multis.py)
+(Multis tab) and
+[`entity_editor_widgets.py`](../../python/tumblepipe/asset_browser/entity_editor_widgets.py)
+(shared pieces), and [`entity_sheet.py`](../../python/tumblepipe/config/entity_sheet.py)
 (model, checks and writes).
 
 ## Opening it

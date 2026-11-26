@@ -35,6 +35,7 @@ from tumblepipe.pipe.houdini import tumbleview
 from tumblepipe.pipe.houdini.scene_context import scene_context
 from tumblepipe.pipe.houdini.sops import playblast as sop_playblast
 from tumblepipe.util import events
+from tumblepipe.pipe.houdini.nodes import button
 
 CACHE_FILE = 'cache.usd'
 WRAPPER_FILE = 'live.usda'
@@ -364,29 +365,29 @@ def start_selected() -> list:
     return runs
 
 
+@button(TITLE)
 def start_from_animate(kwargs):
     """th::animate's Live button."""
-    with ns.node_errors_as_message(TITLE):
-        node = playblast_of(kwargs['node'])
-        if node is not None:
-            start(node)
+    node = playblast_of(kwargs['node'])
+    if node is not None:
+        start(node)
 
 
+@button(TITLE)
 def stop_from_animate(kwargs):
-    with ns.node_errors_as_message(TITLE):
-        for node in dive_playblasts(kwargs['node']):
-            stop(node)
+    for node in dive_playblasts(kwargs['node']):
+        stop(node)
 
 
+@button(TITLE)
 def start_from_playblast(kwargs):
     """th::playblast's Live button."""
-    with ns.node_errors_as_message(TITLE):
-        start(kwargs['node'])
+    start(kwargs['node'])
 
 
+@button(TITLE)
 def stop_from_playblast(kwargs):
-    with ns.node_errors_as_message(TITLE):
-        stop(kwargs['node'])
+    stop(kwargs['node'])
 
 
 # ── the hotkey ──────────────────────────────────────────────

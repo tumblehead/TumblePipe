@@ -2140,7 +2140,10 @@ mod tests {
         assert!(color <= DIFFERING && depth <= DIFFERING, "color {color}, depth {depth}");
     }
 
-    fn chunk_pictures() -> impl Strategy<Value = (usize, Vec<(Vec<[f32; 4]>, Vec<f32>)>)> {
+    /// One chunk's colour and depth.
+    type Picture = (Vec<[f32; 4]>, Vec<f32>);
+
+    fn chunk_pictures() -> impl Strategy<Value = (usize, Vec<Picture>)> {
         let value = prop_oneof![Just(0.0f32), 0.0f32..4.0];
         let pixel = ([value.clone(), value.clone(), value.clone(), value], prop_oneof![Just(1.0f32), 0.0f32..1.0]);
         // Past one group of 64 pixels, and up to 9 chunks (not only powers
@@ -3026,7 +3029,7 @@ mod tests {
         assert!(plain.ids.is_empty(), "no ids unless asked for");
         let (named, _) = render_ids_with_stats(&f, &meshes, None, true).expect("GPU");
         assert!(named.color == plain.color && named.depth == plain.depth, "the ids pass changes no pixel");
-        assert!(named.ids.iter().any(|&id| id == [0, 0]) && named.ids.iter().any(|&id| id == [0, 1]));
+        assert!(named.ids.contains(&[0, 0]) && named.ids.contains(&[0, 1]));
         // Depth of field: the ids are the first chunk's first layer's, so
         // each names an instance, and the blurred frame still has both.
         let lens = crate::blur::Lens::of_camera(50.0, 0.5, 5.0);

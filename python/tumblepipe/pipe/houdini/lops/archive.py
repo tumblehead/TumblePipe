@@ -4,6 +4,7 @@ from pathlib import Path
 from tumblepipe.api import path_str
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.nodes import button
 
 class Archive(FrameRangeNode, ns.Node):
     FRAME_RANGE_PARM = 'range_type'
@@ -41,6 +42,7 @@ class Archive(FrameRangeNode, ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, Archive, 'archive')
 
+@button('Archive')
 def export(kwargs):
     raw_node = kwargs['node']
     node = Archive(raw_node)

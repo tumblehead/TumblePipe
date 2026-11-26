@@ -10,6 +10,7 @@ from pathlib import Path
 
 from tumblepipe.archive.roots import project_roots
 from tumblepipe.cleanup import core
+from tumblepipe.util.text import human_bytes
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -85,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.apply:
         print(f'\nNothing deleted. Run again with --apply to delete the {len(plan.prunable)} '
-              f'listed ({core.human(plan.prunable_size)}).')
+              f'listed ({human_bytes(plan.prunable_size)}).')
         return 0
     log_path = core.log_path_for(roots)
     results = core.apply(plan, log_path)
@@ -94,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     for category in plan.categories:
         removed, removed_bytes, errors = results[category.key]
         if removed or errors:
-            print(f'{category.title}: deleted {removed}, {core.human(removed_bytes)}.')
+            print(f'{category.title}: deleted {removed}, {human_bytes(removed_bytes)}.')
         for error in errors:
             failed = True
             print(f'  {error}')

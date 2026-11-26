@@ -254,7 +254,7 @@ def dive_roots(dive_node) -> list:
     first = animate_points.dive_output(dive_node)
     if first is not None:
         roots.append(first)
-    output_type = animate_points._output_type()
+    output_type = animate_points.output_node_type()
     for node in (output_type.instances() if output_type is not None else ()):
         if node.parent() != dive_node or node in roots:
             continue

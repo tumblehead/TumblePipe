@@ -8,7 +8,7 @@ cr_f16885a53283e792 on TumblePipe 1.108 / 1.109 / 1.111) died in Shiboken
 was "Garbage-collecting". The collection itself started anywhere (TumbleRig's
 tab-bar timer, a hip-load script); what it freed was this:
 
-* ``_SheetPane`` / ``_MultiPane`` made ``self.model = _SheetModel(self)``
+* ``_SheetPane`` / ``MultiPane`` made ``self.model = _SheetModel(self)``
   (the pane's child) and ``self.proxy = _Filter()`` (parentless, so owned
   by Python) and called ``proxy.setSourceModel(model)``; PySide then keeps a
   reference to the model on the proxy.
@@ -20,7 +20,7 @@ tab-bar timer, a hip-load script); what it freed was this:
   goes, ``clearReferences`` decrements the freed model, and Houdini segfaults.
 
 Each scenario runs in its own process, using the real ``_Filter`` /
-``_MultiFilter`` from ``entity_editor``:
+``_MultiFilter`` from ``entity_editor`` / ``entity_editor_multis``:
 
 * ``released`` (TumblePipe <= 1.111): parentless proxy made after the model.
   This one must crash, which shows the hazard is still in this PySide.
@@ -45,10 +45,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PANES = (("_SheetPane", "_Filter"), ("_MultiPane", "_MultiFilter"))
+#: (module, pane, its filter proxy), modules under tumblepipe.asset_browser.
+PANES = (
+    ("entity_editor", "_SheetPane", "_Filter"),
+    ("entity_editor_multis", "MultiPane", "_MultiFilter"),
+)
 
 
-def _import_editor():
+def _import_editor(module: str):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     sys.path.insert(0, str(ROOT / "python"))
     try:
@@ -59,17 +63,17 @@ def _import_editor():
                        key=lambda p: tuple(int(x) for x in re.findall(r"\d+", p.parent.name)))
         if found:
             sys.path.append(str(found[-1]))
-    from tumblepipe.asset_browser import entity_editor
-    return entity_editor
+    import importlib
+    return importlib.import_module(f"tumblepipe.asset_browser.{module}")
 
 
-def _child(filter_name: str, fixed: bool) -> None:
+def _child(module: str, filter_name: str, fixed: bool) -> None:
     import gc
 
     import shiboken6
     from PySide6 import QtGui, QtWidgets
 
-    ee = _import_editor()
+    ee = _import_editor(module)
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     flt = getattr(ee, filter_name)
 
@@ -103,10 +107,10 @@ def _child(filter_name: str, fixed: bool) -> None:
     print("survived", flush=True)
 
 
-def _source_ok(ee) -> list[str]:
+def _source_ok() -> list[str]:
     bad = []
-    for pane_name, filter_name in PANES:
-        src = inspect.getsource(getattr(ee, pane_name))
+    for module, pane_name, filter_name in PANES:
+        src = inspect.getsource(getattr(_import_editor(module), pane_name))
         proxy = re.search(rf"self\.proxy = {filter_name}\(self\)", src)
         model = re.search(r"self\.model = _\w+Model\(self\)", src)
         if proxy is None:
@@ -117,18 +121,18 @@ def _source_ok(ee) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) == 4 and sys.argv[1] == "--child":
-        _child(sys.argv[2], sys.argv[3] == "1")
+    if len(sys.argv) == 5 and sys.argv[1] == "--child":
+        _child(sys.argv[2], sys.argv[3], sys.argv[4] == "1")
         return 0
     failures = 0
-    for problem in _source_ok(_import_editor()):
+    for problem in _source_ok():
         print(f"FAIL source: {problem}")
         failures += 1
-    for _, filter_name in PANES:
+    for module, _, filter_name in PANES:
         results = {}
         for fixed in (False, True):
             proc = subprocess.run(
-                [sys.executable, __file__, "--child", filter_name, "1" if fixed else "0"],
+                [sys.executable, __file__, "--child", module, filter_name, "1" if fixed else "0"],
                 check=False, capture_output=True, text=True, timeout=180,
             )
             results[fixed] = proc.returncode == 0 and "survived" in proc.stdout

@@ -20,6 +20,7 @@ Like every entity-aware th:: HDA the entity defaults to 'from_context'.
 
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.nodes import button
 
 TYPE_NAME = 'import_scene'
 
@@ -68,14 +69,14 @@ def on_created(raw_node):
         node._update_labels()
 
 
+@button('Import Scene')
 def execute(kwargs):
     node = ImportScene(kwargs['node'])
-    with ns.node_errors_as_message('Import Scene'):
-        node.execute()
+    node.execute()
 
 
+@button('Import Scene')
 def select_entity(kwargs):
     node = ImportScene(kwargs['node'])
     node.pick_entity('Select Shot', contexts=('shots',))
-    with ns.node_errors_as_message('Import Scene'):
-        node.execute()
+    node.execute()

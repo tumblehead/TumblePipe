@@ -31,9 +31,8 @@ from tumblepipe.pipe.paths import (
     get_root_export_path,
     get_root_layer_file_name,
     get_scene_staged_path,
-    is_finished_version,
+    latest_finished_version_path,
     latest_root_version_path,
-    list_version_paths,
     next_scene_staged_path,
     get_scene_layer_file_name,
 )
@@ -60,10 +59,7 @@ def root_chain(scene_uri: Uri) -> list[Uri]:
 def _latest_root_export(scene_uri: Uri) -> Path | None:
     """A Root's newest finished export directory, or None: its assets are
     read from that export's context.json."""
-    for version_path in reversed(list_version_paths(get_scene_staged_path(scene_uri))):
-        if is_finished_version(version_path):
-            return version_path
-    return None
+    return latest_finished_version_path(get_scene_staged_path(scene_uri))
 
 
 def root_assets(scene_uri: Uri) -> list[AssetEntry]:

@@ -237,30 +237,30 @@ def publish(end) -> slap_comp.Published:
     return published
 
 
+@ns.button('Publish to Farm')
 def publish_kwargs(kwargs) -> None:
     end = kwargs['node']
-    with ns.node_errors_as_message('Publish to Farm'):
-        published = publish(end)
-        message = (
-            f'Published {published.version_name}: farm renders of '
-            f'{entity_uri(end)} submitted from now on apply this slap comp. '
-            f"Set Farm Submit's Tiles to 1 for them."
-            if published.program_path is not None else
-            f'Published {published.version_name} with Use on Farm Renders off: '
-            f'farm renders of {entity_uri(end)} submitted from now on apply no slap comp.'
-        )
-        if published.program_path is not None:
-            missing = missing_aovs(entity_uri(end), block_inputs(end) + block_outputs(end))
-            if missing:
-                message += (
-                    f'\n\nThe block names AOVs the renders do not write: '
-                    f"{', '.join(missing)}. husk fails a frame whose slap comp "
-                    f'reads or writes an AOV the render lacks.'
-                )
-        if hou.isUIAvailable():
-            hou.ui.displayMessage(message, title=TITLE)
-        else:
-            print(message)
+    published = publish(end)
+    message = (
+        f'Published {published.version_name}: farm renders of '
+        f'{entity_uri(end)} submitted from now on apply this slap comp. '
+        f"Set Farm Submit's Tiles to 1 for them."
+        if published.program_path is not None else
+        f'Published {published.version_name} with Use on Farm Renders off: '
+        f'farm renders of {entity_uri(end)} submitted from now on apply no slap comp.'
+    )
+    if published.program_path is not None:
+        missing = missing_aovs(entity_uri(end), block_inputs(end) + block_outputs(end))
+        if missing:
+            message += (
+                f'\n\nThe block names AOVs the renders do not write: '
+                f"{', '.join(missing)}. husk fails a frame whose slap comp "
+                f'reads or writes an AOV the render lacks.'
+            )
+    if hou.isUIAvailable():
+        hou.ui.displayMessage(message, title=TITLE)
+    else:
+        print(message)
 
 
 ###############################################################################

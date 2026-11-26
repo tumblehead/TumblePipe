@@ -39,8 +39,9 @@ from .ops import (
 from .items import (
     BooleanItem, IntegerItem, FloatItem, StringItem,
     FieldBasicItem, FieldObjectItem, FieldArrayItem,
+    _Slot, _KeySlot, _IndexSlot,
     _type_item, _field_item, _value_item,
-    _parent, _json_path_lookup,
+    _parent, _json_path_lookup, _back_to_inherited,
     _add_field_action, _add_field_section,
 )
 
@@ -135,12 +136,7 @@ class JsonModel(QStandardItemModel):
         self._fields[key] = field_item
 
         # Rebuild _fields in row order (del + re-add pushed the key to the end)
-        new_fields = {}
-        for row in range(self.rowCount()):
-            item = self.item(row, 0)
-            if hasattr(item, '_key'):
-                new_fields[item._key] = item
-        self._fields = new_fields
+        self._fields = {self.item(row, 0)._key: self.item(row, 0) for row in range(self.rowCount())}
 
         # Emit the change signal
         if not notify:
@@ -199,12 +195,7 @@ class JsonModel(QStandardItemModel):
         self.insertRow(to_row, row_items)
 
         # Rebuild _fields dict in new order
-        new_fields = {}
-        for row in range(self.rowCount()):
-            item = self.item(row, 0)
-            if hasattr(item, '_key'):
-                new_fields[item._key] = item
-        self._fields = new_fields
+        self._fields = {self.item(row, 0)._key: self.item(row, 0) for row in range(self.rowCount())}
 
         # Emit change signal
         if not notify:
@@ -277,16 +268,12 @@ class JsonModel(QStandardItemModel):
     def discard_changes(self):
         self.set_value(self._value, self._inherited_data)
 
-    def _on_modify_action(self, action):
-        match action:
-            case "add":
-                return _add_field_action(_parent(self), self)
-            case _:
-                assert False, f"Unknown action: {action}"
+    def _on_add(self):
+        _add_field_action(_parent(self), self)
 
     def _on_context_menu(self, position):
         menu = QMenu()
-        _add_field_section(menu, self._on_modify_action)
+        _add_field_section(menu, self._on_add)
         menu.exec_(position)
 
     def _on_change(self, change: JsonChange):
@@ -394,6 +381,13 @@ class JsonItemDelegate(QStyledItemDelegate):
         return super().setModelData(editor, model, index)
 
 
+def _child_key(parent, row: int) -> str:
+    """The key of the field at ``row`` of object ``parent`` (the model or an
+    object item)."""
+    item = parent.item(row, 0) if isinstance(parent, QStandardItemModel) else parent.child(row, 0)
+    return item._key
+
+
 class JsonView(QTreeView):
     change = Signal(object)
 
@@ -455,7 +449,7 @@ class JsonView(QTreeView):
 
     def _has_override_descendant(self, item) -> bool:
         """Check if item or any descendant has OVERRIDE origin."""
-        if hasattr(item, '_origin') and item._origin == FieldOrigin.OVERRIDE:
+        if item._origin == FieldOrigin.OVERRIDE:
             return True
         for row in range(item.rowCount()):
             child = item.child(row, 0)
@@ -467,7 +461,7 @@ class JsonView(QTreeView):
         """Collapse inherited object/array items (unless they contain overrides)."""
         def collapse_recursive(item):
             # Check if this is a collapsible inherited item
-            if hasattr(item, '_origin') and item._origin == FieldOrigin.INHERITED:
+            if item._origin == FieldOrigin.INHERITED:
                 if isinstance(item, (FieldObjectItem, FieldArrayItem)):
                     # Only collapse if no OVERRIDE descendants
                     if not self._has_override_descendant(item):
@@ -483,80 +477,23 @@ class JsonView(QTreeView):
         for key, field_item in self._model._fields.items():
             collapse_recursive(field_item)
 
-    def _get_expanded_paths(self) -> set[str]:
-        """Get paths of all expanded items."""
-        expanded = set()
-
-        def collect(item, path_parts):
-            if item is None:
-                return
+    def _slots(self):
+        """Every row's slot (column 0), depth first."""
+        def walk(item):
             for row in range(item.rowCount()):
                 child = item.child(row, 0)
-                if child is None:
-                    continue
-                if hasattr(child, '_key'):
-                    child_path = path_parts + [child._key]
-                elif hasattr(child, '_index'):
-                    child_path = path_parts + [str(child._index)]
-                else:
-                    continue
-                path_str = '/'.join(child_path)
-                if self.isExpanded(child.index()):
-                    expanded.add(path_str)
-                collect(child, child_path)
+                yield child
+                yield from walk(child)
+        return walk(self._model.invisibleRootItem())
 
-        # Start from model root
-        for row in range(self._model.rowCount()):
-            item = self._model.item(row, 0)
-            if item is None:
-                continue
-            if hasattr(item, '_key'):
-                path = [item._key]
-            else:
-                continue
-            path_str = '/'.join(path)
-            if self.isExpanded(item.index()):
-                expanded.add(path_str)
-            collect(item, path)
-        return expanded
+    def _get_expanded_paths(self) -> set[JsonPath]:
+        """The paths of the expanded rows."""
+        return {slot.path() for slot in self._slots() if self.isExpanded(slot.index())}
 
-    def _restore_expanded_paths(self, expanded: set[str]):
-        """Restore expanded state from saved paths."""
-        def restore(item, path_parts):
-            if item is None:
-                return
-            for row in range(item.rowCount()):
-                child = item.child(row, 0)
-                if child is None:
-                    continue
-                if hasattr(child, '_key'):
-                    child_path = path_parts + [child._key]
-                elif hasattr(child, '_index'):
-                    child_path = path_parts + [str(child._index)]
-                else:
-                    continue
-                path_str = '/'.join(child_path)
-                if path_str in expanded:
-                    self.expand(child.index())
-                else:
-                    self.collapse(child.index())
-                restore(child, child_path)
-
-        # Start from model root
-        for row in range(self._model.rowCount()):
-            item = self._model.item(row, 0)
-            if item is None:
-                continue
-            if hasattr(item, '_key'):
-                path = [item._key]
-            else:
-                continue
-            path_str = '/'.join(path)
-            if path_str in expanded:
-                self.expand(item.index())
-            else:
-                self.collapse(item.index())
-            restore(item, path)
+    def _restore_expanded_paths(self, expanded: set[JsonPath]):
+        """Expand the rows at ``expanded``, collapse the rest."""
+        for slot in self._slots():
+            self.setExpanded(slot.index(), slot.path() in expanded)
 
     def has_change(self, path: JsonPath = JsonPathRoot()) -> bool:
         return self._model.has_change(path)
@@ -618,51 +555,25 @@ class JsonView(QTreeView):
             super().keyPressEvent(event)
 
     def _delete_selected_items(self):
-        """Delete selected fields - OVERRIDE fields revert to inherited, LOCAL fields are removed."""
-        indexes = self.selectedIndexes()
-        if not indexes:
-            return
-
-        # Filter to column 0 only (field/index items)
-        items_to_process = []
-        for index in indexes:
-            if index.column() != 0:
-                continue
-            item = self._model.itemFromIndex(index)
-            # Skip inherited fields - they cannot be deleted
-            if hasattr(item, '_origin') and item._origin == FieldOrigin.INHERITED:
-                continue
-            items_to_process.append(item)
-
-        if not items_to_process:
-            return
+        """Delete the selected rows: a field goes back to what it inherits
+        (gone when it inherits nothing), an array item goes; inherited rows
+        stay."""
+        slots = [
+            self._model.itemFromIndex(index) for index in self.selectedIndexes()
+            if index.column() == 0
+        ]
+        slots = [slot for slot in slots if slot._origin != FieldOrigin.INHERITED]
 
         # Sort by row descending within each parent to handle index shifts
-        items_to_process.sort(key=lambda x: x.row(), reverse=True)
+        slots.sort(key=lambda x: x.row(), reverse=True)
 
-        for item in items_to_process:
-            parent = item.parent()
-            # For top-level items, parent is None - use model itself
-            if parent is None:
-                parent = self._model
-
-            if hasattr(item, '_key'):  # Field item
-                key = item._key
-                if key not in getattr(parent, '_fields', {}):
-                    continue
-                # OVERRIDE and REDUNDANT fields: revert to inherited value
-                if item._origin in (FieldOrigin.OVERRIDE, FieldOrigin.REDUNDANT):
-                    # Get inherited value from parent's _inherited_data
-                    inherited_data = getattr(parent, '_inherited_data', None) or {}
-                    if key in inherited_data:
-                        parent._set_field_to_inherited(key, inherited_data[key])
-                    else:
-                        parent._remove_field(key)
-                else:  # LOCAL fields: remove entirely
-                    parent._remove_field(key)
-            elif hasattr(item, '_index'):  # Index item - always remove
-                if item._index < len(getattr(parent, '_items', [])):
-                    parent._remove_item(item._index)
+        for slot in slots:
+            parent = _parent(slot)
+            if isinstance(slot, _KeySlot):
+                if slot._key in parent._fields:
+                    _back_to_inherited(parent, slot._key)
+            elif slot._index < len(parent._items):
+                parent._remove_item(slot._index)
 
     def dragEnterEvent(self, event):
         """Accept drag events from within the same view."""
@@ -699,7 +610,7 @@ class JsonView(QTreeView):
             return
 
         # Check origin compatibility - inherited items cannot be reordered
-        if hasattr(source_item, '_origin') and source_item._origin == FieldOrigin.INHERITED:
+        if not isinstance(source_item, _Slot) or source_item._origin == FieldOrigin.INHERITED:
             self._drop_indicator_rect = QRect()
             event.ignore()
             self.viewport().update()
@@ -727,10 +638,9 @@ class JsonView(QTreeView):
         event.accept()
 
     def dropEvent(self, event):
-        """Handle drop for reordering items within same parent."""
-        # Use stored indicator position (dropIndicatorPosition() may differ at drop time)
-        indicator_pos = self._drop_indicator_position
-
+        """Handle drop for reordering items within same parent. Reads the
+        indicator position dragMoveEvent stored (dropIndicatorPosition() may
+        differ at drop time)."""
         # Clear drop indicator
         self._drop_indicator_rect = QRect()
         self.viewport().update()
@@ -755,60 +665,31 @@ class JsonView(QTreeView):
             return
 
         # Handle inherited items - cannot reorder
-        if hasattr(source_item, '_origin') and source_item._origin == FieldOrigin.INHERITED:
+        if not isinstance(source_item, _Slot) or source_item._origin == FieldOrigin.INHERITED:
             event.ignore()
             return
 
-        parent = source_item.parent()
-        if parent is None:
-            parent = self._model
+        parent = _parent(source_item)
 
-        # Determine if this is field reorder or index reorder
-        if hasattr(source_item, '_key') and hasattr(target_item, '_key'):
-            # Field reorder (object children)
-            from_key = source_item._key
+        # The row the dragged one ends on: right before the target, or after
+        # it when dropped below
+        source_row, target_row = source_item.row(), target_item.row()
+        to_row = target_row - (1 if target_row > source_row else 0)
+        if self._drop_indicator_position == QAbstractItemView.BelowItem:
+            to_row += 1
+        if to_row == source_row:
+            event.ignore()
+            return
 
-            # Determine actual target based on drop indicator position
-            if indicator_pos == QAbstractItemView.BelowItem:
-                # Insert after target - find next sibling
-                target_row = target_item.row()
-                if target_row + 1 < parent.rowCount():
-                    next_item = parent.child(target_row + 1, 0)
-                    if next_item and hasattr(next_item, '_key'):
-                        to_key = next_item._key
-                    else:
-                        to_key = target_item._key
-                else:
-                    # Target is last item
-                    to_key = target_item._key
-            else:
-                to_key = target_item._key
-
-            if from_key == to_key:
-                event.ignore()
-                return
-            if hasattr(parent, '_reorder_field'):
-                parent._reorder_field(from_key, to_key)
-                event.accept()
-                return
-        elif hasattr(source_item, '_index') and hasattr(target_item, '_index'):
-            # Index reorder (array children)
-            from_idx = source_item._index
-
-            # Determine actual target based on drop indicator position
-            if indicator_pos == QAbstractItemView.BelowItem:
-                # Insert after target
-                to_idx = target_item._index + 1
-            else:
-                to_idx = target_item._index
-
-            if from_idx == to_idx:
-                event.ignore()
-                return
-            if hasattr(parent, '_move_item'):
-                parent._move_item(from_idx, to_idx)
-                event.accept()
-                return
+        if isinstance(source_item, _KeySlot) and isinstance(target_item, _KeySlot):
+            # It takes the row of the field now there
+            parent._reorder_field(source_item._key, _child_key(parent, to_row))
+            event.accept()
+            return
+        if isinstance(source_item, _IndexSlot) and isinstance(target_item, _IndexSlot):
+            parent._move_item(source_item._index, to_row)
+            event.accept()
+            return
 
         event.ignore()
 

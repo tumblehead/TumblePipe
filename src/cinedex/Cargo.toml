@@ -12,7 +12,10 @@ resolver = "3"
 #
 # `cleanup` (th_cleanup) is the Clean Up Project tool's logic, a port of
 # tumblepipe.cleanup that links no FFmpeg, OCIO or GUI.
-members = ["cinedex", "cleanup", "cleanup-app", "edit", "ffmpeg-sys", "media", "pipe", "playlist"]
+#
+# `window` (th_window) puts an app's icon on its windows and finds them on
+# X11, for Cinedex and Clean Up alike; it links no FFmpeg either.
+members = ["cinedex", "cleanup", "cleanup-app", "edit", "ffmpeg-sys", "media", "pipe", "playlist", "window"]
 
 [workspace.package]
 version = "0.1.0"
@@ -27,6 +30,7 @@ th_playlist = { path = "playlist" }
 th_pipe = { path = "pipe" }
 th_edit = { path = "edit" }
 th_cleanup = { path = "cleanup" }
+th_window = { path = "window" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # In-house UI framework (wgpu + winit). Pinned by revision: Primer is not

@@ -23,24 +23,17 @@ from pathlib import Path
 
 from tumblepipe.archive import inventory as inventory_mod
 from tumblepipe.archive import pack
-from tumblepipe.archive.cli import human, parse_size
+from tumblepipe.archive.cli import parse_size
+from tumblepipe.util.text import human_bytes
 from tumblepipe.archive.plan import Options, Profile, make_plan
 from tumblepipe.archive.roots import project_roots
+from tumblepipe.util.hfs import add_houdini_dll_directory
 
 _PROFILE_TEXT = {
     Profile.PROOF: 'Proof of work — every workfile version, and the latest version of every export',
     Profile.LATEST: 'Latest — the latest workfile per department, and the latest version of every export',
     Profile.FULL: 'Full — every workfile version and every finished export version',
 }
-
-
-def _add_houdini_dll_directory() -> None:
-    """Let PySide6 load: Python 3.8+ on Windows ignores PATH."""
-    hfs = os.environ.get('HFS')
-    if hfs and hasattr(os, 'add_dll_directory'):
-        bin_dir = Path(hfs) / 'bin'
-        if bin_dir.is_dir():
-            os.add_dll_directory(str(bin_dir))
 
 
 def build_window(restore: bool = False):
@@ -191,13 +184,13 @@ def build_window(restore: bool = False):
                 total_in += row['bytes_in']
                 total_out += row['bytes_out']
                 lines.append(
-                    f'{kind:<16} archived {row["files_in"]:>7} / {human(row["bytes_in"]):>9}'
-                    f'   left out {row["files_out"]:>7} / {human(row["bytes_out"]):>9}'
+                    f'{kind:<16} archived {row["files_in"]:>7} / {human_bytes(row["bytes_in"]):>9}'
+                    f'   left out {row["files_out"]:>7} / {human_bytes(row["bytes_out"]):>9}'
                 )
-            lines.insert(0, f'Archive: {human(total_in)}   (left out: {human(total_out)})\n')
+            lines.insert(0, f'Archive: {human_bytes(total_in)}   (left out: {human_bytes(total_out)})\n')
             lines.append('\nLeft out, by reason:')
             for reason, row in sorted(plan.excluded_by_reason().items(), key=lambda kv: -kv[1]['bytes']):
-                lines.append(f'  {human(row["bytes"]):>9}  {reason}')
+                lines.append(f'  {human_bytes(row["bytes"]):>9}  {reason}')
             if plan.warnings:
                 lines.append('\nCheck before sending:')
                 lines.extend(f'  - {warning}' for warning in plan.warnings)
@@ -292,7 +285,7 @@ def build_window(restore: bool = False):
                 f'Project:  {manifest["project"]["name"]}\n'
                 f'Profile:  {manifest["profile"]}\n'
                 f'Created:  {manifest["created"]} by {manifest.get("created_by") or "unknown"}\n'
-                f'Files:    {len(files)} ({human(sum(f["size"] for f in files))})\n'
+                f'Files:    {len(files)} ({human_bytes(sum(f["size"] for f in files))})\n'
                 f'Parts:    {", ".join(manifest["parts"])}\n'
                 f'Made with TumblePipe {", ".join(manifest["tools"]["tumblepipe_versions"]) or "unknown"}, '
                 f'Houdini {", ".join(manifest["tools"]["houdini_versions"]) or "unknown"}\n'
@@ -410,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='tumblepipe.archive.app')
     parser.add_argument('--restore', action='store_true', help='open on the Restore tab')
     args = parser.parse_args(argv)
-    _add_houdini_dll_directory()
+    add_houdini_dll_directory()
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication(sys.argv[:1])

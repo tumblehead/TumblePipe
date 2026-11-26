@@ -14,8 +14,8 @@ The rest of this module used to be reachable only from ``toolbar/*.shelf``,
 which was never in the package allowlist — so those seven helpers shipped to
 every artist with no way to invoke them. The shelves and the helpers went
 together; see the commit that removed them for what was in there. The COP
-helpers they duplicated survive in ``tools.coputils``, which the startup COP
-context menu drives.
+helpers they duplicated survive in ``tools.coputils``, which the radial COP
+menu drives (``pipe.houdini.radial``).
 """
 
 import hou # type: ignore

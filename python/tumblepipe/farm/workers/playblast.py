@@ -2,7 +2,6 @@
 Karma XPU, and encode it into the versioned playblast mp4 and the rolling
 daily."""
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import threading
 import shutil
@@ -12,10 +11,10 @@ import os
 
 from tumblepipe.api import (
     path_str,
-    api
+    api,
+    project_temp_dir,
 )
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.util.uri import Uri
 from tumblepipe.apps.app import CommandFailed
 from tumblepipe.apps.houdini import HOUDINI_VERSION_ENV, Husk
 from tumblepipe.apps import mp4
@@ -56,7 +55,7 @@ LICENCE_ARGS = ['--check-licenses', 'Karma Renderer']
 def husk_renderer_args(look: dict) -> list[str]:
     """husk's renderer arguments for ``look``: our viewport delegate or
     Karma XPU, either way on the Karma Renderer licence, never a seat."""
-    if playblast_spec.look_renderer(look) == 'viewport':
+    if look['renderer'] == 'viewport':
         return [*LICENCE_ARGS, *viewport_args()]
     return [*LICENCE_ARGS, '--allowed-procedurals', 'all', *xpu_args(look)]
 
@@ -264,18 +263,12 @@ def _playblast(
     ) -> int:
 
     # XPU reads the OCIO config just like the render worker does.
-    assert os.environ.get('OCIO') is not None, (
-        'OCIO environment variable not set. '
-        'Please set it to the OCIO config file.'
-    )
+    worker.require_env('OCIO')
 
     husk = Husk()
 
     # Open a temporary directory
-    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with project_temp_dir() as temp_path:
 
         # Temp paths -- husk substitutes $F4 per frame; mp4.from_jpg globs the
         # stack back out of this directory.
@@ -312,15 +305,15 @@ def _playblast(
         # "No licenses could be found" while Karma licences sit free.
         headline('Rendering playblast frames')
         width, height = resolution
-        renderer = playblast_spec.look_renderer(look)
+        renderer = look['renderer']
         print(f'Renderer: {renderer}')
         if renderer == 'viewport':
             houdini_major = int(env[HOUDINI_VERSION_ENV].split('.')[0])
-            shading = playblast_spec.look_shading(look)
-            blur = playblast_spec.look_blur(look)
-            lighting = playblast_spec.look_lighting(look)
-            cull = playblast_spec.look_cull(look)
-            transparency = playblast_spec.look_transparency(look)
+            shading = look['shading']
+            blur = (look['motion_blur'], look['dof'], look['blur_samples'])
+            lighting = look['lighting']
+            cull = look['cull']
+            transparency = look['transparency']
             print(f'Shading: {shading}')
             print(f'Lighting: {lighting}')
             print(f'Culling: {cull}')

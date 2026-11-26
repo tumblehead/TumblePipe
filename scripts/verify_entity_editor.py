@@ -46,7 +46,9 @@ import _harness  # noqa: E402,F401  (temp project, python/ on sys.path)
 from _harness import reset_project  # noqa: E402
 
 from PySide6.QtCore import QEvent, Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QMessageBox, QPushButton  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication, QComboBox, QDialog, QLabel, QMessageBox, QPushButton, QSpinBox,
+)
 
 from tumblepipe.api import default_client  # noqa: E402
 from tumblepipe.config import entity_sheet as es  # noqa: E402
@@ -59,6 +61,10 @@ from tumblepipe.util.uri import Uri  # noqa: E402
 app = QApplication.instance() or QApplication(sys.argv)
 
 from tumblepipe.asset_browser import entity_editor as ee  # noqa: E402
+from tumblepipe.asset_browser import entity_editor_dialogs as eed  # noqa: E402
+from tumblepipe.asset_browser import entity_editor_multis as eem  # noqa: E402
+from tumblepipe.asset_browser import entity_editor_render as eer  # noqa: E402
+from tumblepipe.asset_browser import entity_editor_widgets as eew  # noqa: E402
 
 failures = []
 
@@ -173,13 +179,13 @@ def cell(pane, group, name, column):
 _row, own_end = cell(shots, 'sq010', 'SH010', es.FRAME_END)
 _row, inherited_end = cell(shots, 'sq010', 'SH020', es.FRAME_END)
 check('own value is bright and bold',
-      own_end.data(Qt.ForegroundRole) == ee._OVERRIDE and own_end.data(Qt.FontRole).bold())
+      own_end.data(Qt.ForegroundRole) == eew._OVERRIDE and own_end.data(Qt.FontRole).bold())
 check('inherited value is grey, not bold',
-      inherited_end.data(Qt.ForegroundRole) == ee._INHERITED and not inherited_end.data(Qt.FontRole))
+      inherited_end.data(Qt.ForegroundRole) == eew._INHERITED and not inherited_end.data(Qt.FontRole))
 _row, assets_cell = cell(shots, 'sq010', 'SH020', es.ASSETS)
 check('Assets column shows the Root list', assets_cell.data() == 'PROP/tree ×3', assets_cell.data())
-check('Assets of an inherited Root are grey', assets_cell.data(Qt.ForegroundRole) == ee._INHERITED)
-check('Status sits beside the name', shots.columns[:3] == (es.GROUP, es.NAME, ee.STATUS))
+check('Assets of an inherited Root are grey', assets_cell.data(Qt.ForegroundRole) == eew._INHERITED)
+check('Status sits beside the name', shots.columns[:3] == (es.GROUP, es.NAME, eew.STATUS))
 check('the legend is one line', not shots.legend.wordWrap() and '\n' not in shots.legend.text())
 
 # ── Shots: typing into a selection ─────────────────────────────────────────
@@ -191,7 +197,7 @@ check('typing fills the selected cells',
       all(shots.sheet.value(shots.sheet.row(i), es.ROLL_END) == 4 for i in ids))
 _row, typed = cell(shots, 'sq010', 'SH020', es.ROLL_END)
 check('a pending value is bold and tinted',
-      typed.data(Qt.FontRole).bold() and typed.data(Qt.BackgroundRole) == ee._PENDING)
+      typed.data(Qt.FontRole).bold() and typed.data(Qt.BackgroundRole) == eew._PENDING)
 # Selection is an outline: the pending tint still shows inside a selected
 # cell (Houdini's amber highlight used to cover it).
 app.processEvents()
@@ -233,8 +239,8 @@ if len(sys.argv) > 1:
 # ── Root assets: the shared Root ───────────────────────────────────────────
 
 row020, _ = cell(shots, 'sq010', 'SH020', es.ASSETS)
-dialog = ee.RootAssetsDialog(shots, row020)
-intro = dialog.findChildren(ee.QLabel)[0].text()
+dialog = eed.RootAssetsDialog(shots, row020)
+intro = dialog.findChildren(QLabel)[0].text()
 check('dialog warns the Root is shared', '2 other shots' in intro and 'SH010' in intro, intro)
 dialog.picker.set_checked('entity:/assets/VEH/car', True, 2)
 check('picker returns own list', [e.label for e in dialog.picker.own()] == ['PROP/tree ×3', 'VEH/car ×2'],
@@ -243,7 +249,7 @@ dialog.reject()
 shots.apply_assets_action(row020.id, ('root', 'scenes:/forest', dialog.picker.own()))
 _row, a010 = cell(shots, 'sq010', 'SH010', es.ASSETS)
 check('changing the Root changes every shot using it',
-      a010.data() == 'PROP/tree ×3, VEH/car ×2' and a010.data(Qt.BackgroundRole) == ee._PENDING, a010.data())
+      a010.data() == 'PROP/tree ×3, VEH/car ×2' and a010.data(Qt.BackgroundRole) == eew._PENDING, a010.data())
 
 # ── Root assets: a shot's own Root ─────────────────────────────────────────
 
@@ -264,7 +270,7 @@ def _listed(pane, group):
     names = []
     for source_row in range(pane.model.rowCount()):
         row = pane.model.row_at(source_row)
-        if not isinstance(row, ee.GroupKey) and row.group == group:
+        if not isinstance(row, es.GroupKey) and row.group == group:
             names.append(row.name)
     return names
 
@@ -294,7 +300,7 @@ assets._copy()
 check('Copy leaves the rig note out', QApplication.clipboard().text() == 'No', QApplication.clipboard().text())
 assets.proxy.setData(tree, Qt.Checked, Qt.CheckStateRole)
 check('ticking Animatable sets it', assets.sheet.value(assets.sheet.row(_row.id), es.ANIMATABLE) is True)
-add = ee.AddAssetsDialog(assets, 'PROP')
+add = eed.AddAssetsDialog(assets, 'PROP')
 add.set_names('bush, cone')
 assets.add_rows(add.rows())
 add.reject()
@@ -322,11 +328,11 @@ if len(sys.argv) > 1:
 # ── The Add buttons open their dialogs ─────────────────────────────────────
 
 opened = []
-_exec = ee.QDialog.exec
-ee.QDialog.exec = lambda self: (opened.append(type(self).__name__), ee.QDialog.Rejected)[1]
+_exec = QDialog.exec
+QDialog.exec = lambda self: (opened.append(type(self).__name__), QDialog.Rejected)[1]
 for pane in (shots, assets):
-    next(b for b in pane.findChildren(ee.QPushButton) if b.text().startswith('Add ')).click()
-ee.QDialog.exec = _exec
+    next(b for b in pane.findChildren(QPushButton) if b.text().startswith('Add ')).click()
+QDialog.exec = _exec
 check('Add Shots… and Add Assets… open their dialogs',
       opened == ['AddShotsDialog', 'AddAssetsDialog'], opened)
 
@@ -340,9 +346,9 @@ config.write_root('entity', legacy)
 window._reload()
 _row, rootless = cell(shots, 'sq_0090', 'Shot_0030', es.ASSETS)
 check('a shot with no Root has an empty Assets cell', rootless.data() == '', rootless.data())
-note = ee.AddShotsDialog(shots, 'sq_0090')._sequence_note.text()
+note = eed.AddShotsDialog(shots, 'sq_0090')._sequence_note.text()
 check('Add Shots says when a sequence\'s names have no pattern', 'without a number pattern' in note, note)
-sized = ee.AddAssetsDialog(assets, 'PROP')
+sized = eed.AddAssetsDialog(assets, 'PROP')
 check('Add Assets is as tall as its content', sized.height() == sized.sizeHint().height(),
       (sized.height(), sized.sizeHint().height()))
 sized.reject()
@@ -360,7 +366,7 @@ crowd = next(m for m in shots.sheet.multis if m.name == 'Crowd')
 first_box = multis.columns.index(POOL[0])
 check('the Multis tab has a box per department, after the Timeline',
       list(multis.columns[first_box:]) == list(shots.sheet.base.pool)
-      and multis.columns[first_box - 1] == ee.TIMELINE,
+      and multis.columns[first_box - 1] == eem.TIMELINE,
       multis.columns)
 
 # The selected Multi's workfiles, below the table: Crowd as stored.
@@ -518,14 +524,14 @@ def _join(dialog):
     return QDialog.Accepted
 
 
-ee.MultiMembershipDialog.exec = _join
+eed.MultiMembershipDialog.exec = _join
 shots.select_cells([(i, shots.columns.index(es.MULTIS)) for i in ids])
 shots.edit_multis(shots.index_of(ids[0], es.MULTIS))
 check('the Multis cell joins the selected shots',
       all(i in crowd.members for i in ids), crowd.members)
 _row, joined = cell(shots, 'sq010', 'SH020', es.MULTIS)
 check('a joined shot shows the Multi, pending',
-      joined.data() == 'Crowd' and joined.data(Qt.BackgroundRole) == ee._PENDING)
+      joined.data() == 'Crowd' and joined.data(Qt.BackgroundRole) == eew._PENDING)
 check('its status says so', 'Multis changed' in shots.model.status(shots.sheet.row(ids[0]))[0])
 
 # Coverage: untick the second department, tick the third.
@@ -558,7 +564,7 @@ check('a new Multi has no workfiles until Apply: its departments show none, and 
       and 'new Multi has no workfiles' in panel.note.text(), (sorted(panel.buttons), panel.note.text()))
 
 # A shots Multi's Timeline: a choice in its own column; the selected Multis follow.
-column_t = multis.columns.index(ee.TIMELINE)
+column_t = multis.columns.index(eem.TIMELINE)
 crowd_t = multis._index_of(crowd.id, column_t)
 check('the Timeline cell shows Per shot, and can be changed',
       crowd_t.data() == 'Per shot' and bool(crowd_t.flags() & Qt.ItemIsEditable), crowd_t.data())
@@ -574,17 +580,25 @@ delegate.setModelData(editor, multis.proxy, crowd_t)
 check('choosing it sets every selected Multi\'s',
       crowd.timeline == (True, True) and hero.timeline == (True, True), (crowd.timeline, hero.timeline))
 crowd_t = multis._index_of(crowd.id, column_t)
-crowd_status = multis._index_of(crowd.id, multis.columns.index(ee.STATUS)).data()
+crowd_status = multis._index_of(crowd.id, multis.columns.index(eew.STATUS)).data()
 check('the cell shows it, pending, and the status says so',
-      crowd_t.data() == 'Shared, with bookmarks' and crowd_t.data(Qt.BackgroundRole) == ee._PENDING
+      crowd_t.data() == 'Shared, with bookmarks' and crowd_t.data(Qt.BackgroundRole) == eew._PENDING
       and 'Timeline changed' in (crowd_status or ''), (crowd_t.data(), crowd_status))
 multis.select_cells([(hero.id, column_t)], (hero.id, column_t))
 editor.setCurrentText('Per shot')
 delegate.setModelData(editor, multis.proxy, multis._index_of(hero.id, column_t))
 check('and back for one', hero.timeline == (False, False) and crowd.timeline == (True, True))
 multis.set_context('assets')
-check('an assets Multi has no Timeline', ee.TIMELINE not in multis.columns, multis.columns)
+check('an assets Multi has no Timeline', eem.TIMELINE not in multis.columns, multis.columns)
 multis.set_context('shots')
+
+# The tab's search keeps the Multis whose name holds what is typed.
+multis._search.setText(crowd.name[1:].upper())
+shown = [multis.proxy.index(r, 0).data() for r in range(multis.proxy.rowCount())]
+check('the search keeps only the Multis it names', shown == [crowd.name], shown)
+multis._search.setText('')
+check('and clearing it shows them all again',
+      multis.proxy.rowCount() == multis.model.rowCount(), multis.proxy.rowCount())
 
 # The browser's New Multi…: this tab, of its context, asking for a Multi
 # that starts empty, whatever is selected on the Shots tab.
@@ -600,7 +614,7 @@ def _new_chase(dialog):
 
 
 shots.select_cells([(shots.sheet.rows[0].id, 0)])
-ee.NewMultiDialog.exec = _new_chase
+eed.NewMultiDialog.exec = _new_chase
 window.new_multi('shots')
 window.new_multi('assets')
 check('New Multi… asks on the Multis tab, of each context, with a Timeline for shots only',
@@ -627,7 +641,7 @@ def _new_from_row(dialog):
     return QDialog.Accepted
 
 
-ee.NewMultiDialog.exec = _new_from_row
+eed.NewMultiDialog.exec = _new_from_row
 window.new_multi('assets', _category)
 from_row = next((m for m in assets.sheet.multis if m.name == 'Rowmulti'), None)
 check('New Multi… from a category row offers that category, ticked',
@@ -635,7 +649,7 @@ check('New Multi… from a category row offers that category, ticked',
 check('and the new Multi lists the category whole',
       from_row is not None and list(from_row.members) == [assets.sheet.group_member(_category)],
       from_row and from_row.members)
-ee.NewMultiDialog.exec = _new_chase
+eed.NewMultiDialog.exec = _new_chase
 
 # The Multis table scrolls sideways with Shift+wheel, and a click on a
 # cell it can see does not scroll it away from the pointer (#30).
@@ -683,7 +697,7 @@ _hbar = _table.horizontalScrollBar()
 _hbar.setValue(0)
 app.processEvents()
 _row = next(r for r in range(shots.proxy.rowCount())
-            if not isinstance(shots._row_id(shots.proxy.index(r, 0)), ee.GroupKey))
+            if not isinstance(shots._row_id(shots.proxy.index(r, 0)), es.GroupKey))
 _view = _table.viewport().width()
 
 
@@ -731,7 +745,7 @@ check('scrolled right, the frozen columns still show at the left edge',
       and _table.visualRect(shots.proxy.index(_row, 1)).right() < _fw,
       (_hbar.value(), _frozen.width(), _fw))
 _cell = shots.proxy.index(_row, 2)
-_table.selectionModel().setCurrentIndex(_cell, ee.QItemSelectionModel.ClearAndSelect)
+_table.selectionModel().setCurrentIndex(_cell, QItemSelectionModel.ClearAndSelect)
 _table.scrollTo(_cell)
 app.processEvents()
 check('a cell scrolled to comes out from under the frozen columns',
@@ -758,7 +772,7 @@ check('the frozen columns scroll with the rows',
 _vbar.setValue(0)
 # A click on a sequence's name in the frozen view folds it, as it did.
 _group_row = next(r for r in range(shots.proxy.rowCount())
-                  if isinstance(shots._row_id(shots.proxy.index(r, 0)), ee.GroupKey))
+                  if isinstance(shots._row_id(shots.proxy.index(r, 0)), es.GroupKey))
 _before = shots.proxy.rowCount()
 _point = _frozen.visualRect(shots.proxy.index(_group_row, 0)).center()
 QTest.mouseClick(_frozen.viewport(), Qt.LeftButton, Qt.NoModifier, _point)
@@ -778,7 +792,7 @@ if _editable is None:
     print('SKIP  no editable frozen cell')
 else:
     _table.setFocus()
-    _table.selectionModel().setCurrentIndex(_editable, ee.QItemSelectionModel.ClearAndSelect)
+    _table.selectionModel().setCurrentIndex(_editable, QItemSelectionModel.ClearAndSelect)
     QTest.keyClick(_table, Qt.Key_F2)
     app.processEvents()
     _in_frozen = _frozen.viewport().findChildren(_QLineEdit)
@@ -792,7 +806,7 @@ _hbar.setValue(0)
 for _c, _w in enumerate(_widths):
     _table.setColumnWidth(_c, _w)
 multis.set_context('shots')
-members = ee.MultiMembersDialog(window, shots.sheet, chase)
+members = eed.MultiMembersDialog(window, shots.sheet, chase)
 members.show()
 app.processEvents()
 _table = members.list.table
@@ -818,7 +832,7 @@ check('a New Sequence… button', any(
 ))
 # Parented, as the pane makes it: a parentless dialog was left for
 # Python's exit to delete after QApplication, which aborted a run in four.
-taken = ee.NewGroupDialog(shots.sheet, parent=shots)
+taken = eed.NewGroupDialog(shots.sheet, parent=shots)
 taken._name.setText('SQ010')
 check('a name taken in another case is refused',
       'differs only by case' in taken.problem() and not taken._create.isEnabled(), taken.problem())
@@ -830,7 +844,7 @@ def _name_it(dialog):
     return QDialog.Accepted
 
 
-ee.NewGroupDialog.exec = _name_it
+eed.NewGroupDialog.exec = _name_it
 shots.new_group()
 check('New Sequence… adds an empty sequence, pending', shots.sheet.new_groups == ('sq090',))
 check('the dropdown shows it, marked new', shots._group_filter.currentText() == 'sq090 (new)',
@@ -847,7 +861,7 @@ shots.focus('')
 
 # ── A sequence's own row ───────────────────────────────────────────────────
 
-SQ010, SQ020 = ee.GroupKey('sq010'), ee.GroupKey('sq020')
+SQ010, SQ020 = es.GroupKey('sq010'), es.GroupKey('sq020')
 keys = shots.model._ids
 check('each sequence has its own row above its shots',
       keys[0] == SQ010 and all(shots.sheet.row(k).group == 'sq010' for k in keys[1:4])
@@ -861,7 +875,7 @@ column = shots.columns.index(es.MULTIS)
 seq_multis = shots.index_of(SQ020, es.MULTIS)
 check('a sequence row\'s Multis cell is editable',
       bool(seq_multis.flags() & Qt.ItemIsEditable), seq_multis.flags())
-ee.MultiMembershipDialog.exec = _join
+eed.MultiMembershipDialog.exec = _join
 shots.select_cells([(SQ020, column)], current=(SQ020, column))
 shots.edit_multis(seq_multis)
 check('the sequence row lists the sequence whole in the Multi',
@@ -882,10 +896,10 @@ check('its name cell counts its shots', shots.index_of(SQ010, es.NAME).data() ==
       shots.index_of(SQ010, es.NAME).data())
 _row, shot_root = cell(shots, 'sq010', 'SH020', es.ROOT)
 check('a shot shows the Root it inherits from its sequence',
-      shot_root.data() == 'forest' and shot_root.data(Qt.ForegroundRole) == ee._INHERITED
+      shot_root.data() == 'forest' and shot_root.data(Qt.ForegroundRole) == eew._INHERITED
       and 'sequence sq010' in shot_root.data(Qt.ToolTipRole), shot_root.data(Qt.ToolTipRole))
 check('a sequence\'s Status, Group and Name cannot be typed into', not any(
-    shots.index_of(SQ020, c).flags() & Qt.ItemIsEditable for c in (es.GROUP, es.NAME, ee.STATUS)
+    shots.index_of(SQ020, c).flags() & Qt.ItemIsEditable for c in (es.GROUP, es.NAME, eew.STATUS)
 ))
 shots.select_cells([(SQ020, shots.columns.index(es.ROOT))])
 shots.commit(shots.index_of(SQ020, es.ROOT), 'scenes:/town')
@@ -893,11 +907,11 @@ _row, sq020_root = cell(shots, 'sq020', 'SH010', es.ROOT)
 _row, sq020_assets = cell(shots, 'sq020', 'SH020', es.ASSETS)
 check('a Root typed on a sequence reaches its shots at once',
       sq020_root.data() == 'town' and sq020_assets.data() == 'VEH/car'
-      and sq020_root.data(Qt.ForegroundRole) == ee._INHERITED,
+      and sq020_root.data(Qt.ForegroundRole) == eew._INHERITED,
       (sq020_root.data(), sq020_assets.data()))
 check('the sequence row is pending, its status says so',
-      shots.index_of(SQ020, es.ROOT).data(Qt.BackgroundRole) == ee._PENDING
-      and shots.index_of(SQ020, ee.STATUS).data() == 'Changed')
+      shots.index_of(SQ020, es.ROOT).data(Qt.BackgroundRole) == eew._PENDING
+      and shots.index_of(SQ020, eew.STATUS).data() == 'Changed')
 check('its Assets cell shows what its shots get', shots.index_of(SQ020, es.ASSETS).data() == 'VEH/car')
 pending = ' '.join(window._pending()[0])
 check('Apply counts the changed sequence', '1 sequence changed' in pending, pending)
@@ -913,7 +927,7 @@ check('and again shows them', all(
 shots._search.setText('SH020')
 shown = [shots._row_id(shots.proxy.index(p, 0)) for p in range(shots.proxy.rowCount())]
 check('filtering keeps each sequence row above its matching shots',
-      [k if isinstance(k, ee.GroupKey) else shots.sheet.row(k).name for k in shown]
+      [k if isinstance(k, es.GroupKey) else shots.sheet.row(k).name for k in shown]
       == [SQ010, 'SH020', SQ020, 'SH020'], shown)
 shots._search.setText('')
 r030, _i = cell(shots, 'sq010', 'SH030', es.ROLL_START)
@@ -927,8 +941,8 @@ check('a pasted block runs over a sequence row, not into it',
 shots.select_cells([(SQ010, shots.columns.index(es.FPS))])
 shots.commit(shots.index_of(SQ010, es.FPS), '0')
 check('a bad sequence value is a problem that blocks Apply',
-      'FPS' in shots.index_of(SQ010, ee.STATUS).data() and not window._apply_button.isEnabled(),
-      shots.index_of(SQ010, ee.STATUS).data())
+      'FPS' in shots.index_of(SQ010, eew.STATUS).data() and not window._apply_button.isEnabled(),
+      shots.index_of(SQ010, eew.STATUS).data())
 shots._reset_cells()
 check('Delete puts it back', 'fps' not in shots.sheet.group_own('sq010') and window._apply_button.isEnabled())
 if len(sys.argv) > 1:
@@ -951,7 +965,7 @@ def _fx_on_sequence(dialog):
     return QDialog.Accepted
 
 
-ee.LayersDialog.exec = _fx_on_sequence
+eed.LayersDialog.exec = _fx_on_sequence
 shots.select_cells([(SQ010, LAYERS_COLUMN)], current=(SQ010, LAYERS_COLUMN))
 shots.edit_layers(shots.index_of(SQ010, es.LAYERS))
 check("a sequence's Layers dialog has no Inherit while it sets none",
@@ -959,11 +973,11 @@ check("a sequence's Layers dialog has no Inherit while it sets none",
 check('its default row cannot be renamed', seen['sequence default locked'])
 check('the sequence row shows its layers, pending',
       shots.index_of(SQ010, es.LAYERS).data() == 'fx: /FX/*'
-      and shots.index_of(SQ010, es.LAYERS).data(Qt.BackgroundRole) == ee._PENDING,
+      and shots.index_of(SQ010, es.LAYERS).data(Qt.BackgroundRole) == eew._PENDING,
       shots.index_of(SQ010, es.LAYERS).data())
 _row, sh020_layers = cell(shots, 'sq010', 'SH020', es.LAYERS)
 check('its shots show them inherited, at once',
-      sh020_layers.data() == 'fx: /FX/*' and sh020_layers.data(Qt.ForegroundRole) == ee._INHERITED,
+      sh020_layers.data() == 'fx: /FX/*' and sh020_layers.data(Qt.ForegroundRole) == eew._INHERITED,
       sh020_layers.data())
 
 
@@ -986,7 +1000,7 @@ def _characters_from_selection(dialog):
 
 
 r010, _i = cell(shots, 'sq010', 'SH010', es.LAYERS)
-ee.LayersDialog.exec = _characters_from_selection
+eed.LayersDialog.exec = _characters_from_selection
 shots.select_cells([(r010.id, LAYERS_COLUMN)], current=(r010.id, LAYERS_COLUMN))
 shots.edit_layers(shots.index_of(r010.id, es.LAYERS))
 check("the open shot's layers are counted on its stage",
@@ -1014,7 +1028,7 @@ def _drop_export(dialog):
 
 
 r020, _i = cell(shots, 'sq010', 'SH020', es.LAYERS)
-ee.LayersDialog.exec = _drop_export
+eed.LayersDialog.exec = _drop_export
 shots.select_cells([(r020.id, LAYERS_COLUMN)], current=(r020.id, LAYERS_COLUMN))
 shots.edit_layers(shots.index_of(r020.id, es.LAYERS))
 check('an exported channel cannot be removed or renamed',
@@ -1039,7 +1053,7 @@ def _inherit(dialog):
     return QDialog.Accepted
 
 
-ee.LayersDialog.exec = _inherit
+eed.LayersDialog.exec = _inherit
 shots.select_cells([(r020.id, LAYERS_COLUMN)])
 shots.commit(shots.index_of(r020.id, es.LAYERS), 'fx: /FX/sparks')
 shots.select_cells([(r020.id, LAYERS_COLUMN)], current=(r020.id, LAYERS_COLUMN))
@@ -1068,7 +1082,7 @@ samples = rs.editors[rc.SAMPLES].spin
 diffuse = rs.editors[rc.DIFFUSE_LIMIT].spin
 dof = rs.editors[rc.DOF].combo
 check('resolution is two whole-number fields and a Presets menu',
-      isinstance(res.width_spin, ee.QSpinBox) and isinstance(res.height_spin, ee.QSpinBox)
+      isinstance(res.width_spin, QSpinBox) and isinstance(res.height_spin, QSpinBox)
       and res.presets_button.text() == 'Presets')
 
 
@@ -1103,7 +1117,7 @@ app.processEvents()
 check('a shot shows its resolution and where it comes from',
       _res_shown() == (1920, 1080) and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
       (_res_shown(), rs.origins[es.RENDER_RESOLUTION].text()))
-check('an inherited value is grey', ee._INHERITED.color().name() in res.styleSheet(),
+check('an inherited value is grey', eew._INHERITED.color().name() in res.styleSheet(),
       res.styleSheet())
 check('the Render column shows a shot that pins nothing as empty, saying so',
       _render_cell(r_sh020.id)[0] == '' and 'sets no render setting' in _render_cell(r_sh020.id)[1],
@@ -1114,7 +1128,7 @@ check('the Render column is not typed into',
 defaults_samples = shots.sheet.base.for_everyone.values.get(rc.SAMPLES)
 check('samples only the pipeline defaults hold show as not set, the render defaults deciding',
       samples.value() == samples.minimum()
-      and rs.origins[rc.SAMPLES].text() == ee._RENDER_DEFAULTS
+      and rs.origins[rc.SAMPLES].text() == eer._RENDER_DEFAULTS
       and shots.sheet.base.for_everyone.sources.get(rc.SAMPLES) == rc.DEFAULTS_LEVEL,
       (samples.value(), rs.origins[rc.SAMPLES].text(), defaults_samples))
 
@@ -1134,7 +1148,7 @@ check('the presets start with the project\'s resolution, each size once',
 res.pick((2048, 858))
 app.processEvents()
 check('a preset is pending on all shots',
-      shots.sheet.everyone_value(es.RENDER_RESOLUTION) == [2048, 858]
+      shots.sheet.cell(es.EVERYONE, es.RENDER_RESOLUTION).value == [2048, 858]
       and rs.origins[es.RENDER_RESOLUTION].text() == 'set here, waiting for Apply'
       and _res_shown() == (2048, 858),
       (rs.origins[es.RENDER_RESOLUTION].text(), _res_shown()))
@@ -1153,11 +1167,11 @@ check("a sequence's own row edits the sequence", rs.target.text().startswith('Se
 _type(cam_edit, '/cameras/seq_cam')
 samples.setValue(128)
 app.processEvents()
-check('samples set on the sequence', shots.sheet.group_value('sq010', rc.SAMPLES) == 128
-      and shots.sheet.group_state('sq010', rc.SAMPLES) == es.SET)
+check('samples set on the sequence', shots.sheet.cell(es.GroupKey('sq010'), rc.SAMPLES).value == 128
+      and shots.sheet.cell(es.GroupKey('sq010'), rc.SAMPLES).state == es.SET)
 check("the sequence's Render cell lists what it pins, tinted while pending",
       _render_cell(SQ010)[0] == 'cam, samples'
-      and shots.index_of(SQ010, es.RENDER_PINS).data(Qt.BackgroundRole) == ee._PENDING
+      and shots.index_of(SQ010, es.RENDER_PINS).data(Qt.BackgroundRole) == eew._PENDING
       and 'Samples: 128' in _render_cell(SQ010)[1], _render_cell(SQ010))
 shots.select_cells([(r_sh020.id, NAME_COLUMN)])
 app.processEvents()
@@ -1486,7 +1500,7 @@ app.processEvents()
 fshots, fassets = flat_window.panes['shots'], flat_window.panes['assets']
 frozen = fshots.table.frozen_view()
 check('flat: no sequence rows', not any(
-    isinstance(fshots.model.row_at(i), ee.GroupKey) for i in range(fshots.model.rowCount())
+    isinstance(fshots.model.row_at(i), es.GroupKey) for i in range(fshots.model.rowCount())
 ))
 check('flat: the Sequence column is hidden, in the frozen view too',
       fshots.table.isColumnHidden(0) and frozen.isColumnHidden(0) and not frozen.isColumnHidden(1))
@@ -1507,7 +1521,7 @@ check('flat: every shot, by name', listed == sorted(listed, key=es.natural_key)
 check('flat: the Assets tab is not flat',
       not fassets.table.isColumnHidden(0) and not fassets._group_filter.isHidden()
       and not fassets.new_group_button.isHidden())
-add = ee.AddShotsDialog(fshots, fshots.flat_group)
+add = eed.AddShotsDialog(fshots, fshots.flat_group)
 check('flat: Add Shots asks no Sequence', not add.layout().isRowVisible(0))
 check('flat: Add Shots adds into the implicit sequence',
       bool(add.rows()) and all(r[0] == 'sq010' for r in add.rows()), add.rows())
