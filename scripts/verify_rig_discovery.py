@@ -19,6 +19,20 @@ throwaway project:
    by the rule.
 3. Discover with Stage empty inside a th::animate reads the stage fed into
    it; outside one it raises a NodeError that says to set Stage.
+4. Browse Rigs... (the picker stood in for, picking a rigged asset, an
+   unrigged one and one already in a row): the button is beside Discover,
+   now labelled Add Rigs from Scene; it opens the picker in multi-select,
+   adds one row (latest, one instance), names the unrigged pick in the
+   status line, and imports.
+5. startup.hide_retired_node_types hides th::import_rig from TAB, not
+   th::import_rigs, and createNode still makes it.
+6. Rig Sync on Follow Stage in a th::animate: the rows follow the stage.
+7. Rig Sync moves keys: kid keyed in the dive's Scene Animate (a base
+   entry and one on a layer), the stage raised to two copies, a sync: kid0
+   has kid's keys as they were, kid is gone from the rows, th::animate's
+   Characters and th::layout_keys rows; one undo puts it all back; a
+   second sync sets nothing; with kid0 keyed already nothing moves and kid
+   is kept beside it.
 
 Needs a Houdini license, not an existing project:
 
@@ -68,6 +82,9 @@ HERO = Uri.parse("entity:/assets/CHAR/hero")       # rigged, box off
 BALL = Uri.parse("entity:/assets/PROP/ball")       # box on, no rig
 CRATE = Uri.parse("entity:/assets/PROP/crate")     # neither
 OLD = Uri.parse("entity:/assets/CHAR/sidekick")    # rigged, prim untagged
+PAWN = Uri.parse("entity:/assets/CHAR/pawn")       # rigged, copies with a gap
+KID = Uri.parse("entity:/assets/CHAR/kid")         # rigged, added on the stage later
+VILLAIN = Uri.parse("entity:/assets/CHAR/villain") # rigged, not on the stage
 FAILURES: list[str] = []
 APEX_ADD = "apex::sceneaddcharacter"
 
@@ -179,6 +196,8 @@ def check_discover(lop) -> None:
     print("2. Discover with Stage set")
     geo = hou.node("/obj").createNode("geo", "discover_set")
     native = geo.createNode("th::import_rigs::2.0", "rigs")
+    # Discover as Manual has it (Follow Stage is section 6)
+    native.parm("rig_sync").set("manual")
     node = import_rigs.ImportRigs(native)
     # A row the stage still animates keeps its pinned version
     node.set_rig_imports([(HERO, "default", "v0001", 1), (CRATE, "default", "latest", 1)])
@@ -237,6 +256,435 @@ def check_stage_default(lop) -> None:
           entities == [str(HERO), str(OLD)], entities)
 
 
+class _HouNoUi:
+    """``hou`` with the UI calls a button makes answered headless:
+    hython has no main window and no status bar."""
+
+    def __init__(self, statuses):
+        self.qt = type("qt", (), {"mainWindow": staticmethod(lambda: None)})
+        self.ui = type("ui", (), {"setStatusMessage": staticmethod(
+            lambda text, **kwargs: statuses.append(text))})
+
+    def __getattr__(self, name):
+        return getattr(hou, name)
+
+
+def check_browse_rigs() -> None:
+    print("4. Browse Rigs... adds the picked rigs, then imports")
+    import types
+
+    geo = hou.node("/obj").createNode("geo", "browse_rigs")
+    native = geo.createNode("th::import_rigs::2.0", "rigs")
+    # Browse Rigs... as Manual has it (Follow Stage is section 6)
+    native.parm("rig_sync").set("manual")
+    discover = native.parmTemplateGroup().find("discover")
+    browse = native.parmTemplateGroup().find("browse_rigs")
+    check("Discover is labelled Add Rigs from Scene, parm name kept",
+          discover is not None and discover.label() == "Add Rigs from Scene",
+          discover.label() if discover else None)
+    check("Browse Rigs... sits beside it",
+          browse is not None and browse.label() == "Browse Rigs..."
+          and discover.joinsWithNext(), browse.label() if browse else None)
+    import_rigs.ImportRigs(native).set_rig_imports([(OLD, "default", "v0001", 1)])
+
+    picks, seen, statuses = [str(HERO), str(CRATE), str(OLD)], [], []
+
+    class Picker:
+        def __init__(self, *args, **kwargs):
+            seen.append(kwargs)
+
+        def exec_(self):
+            return True
+
+        def get_selected_uris(self):
+            return list(picks)
+
+    fake = types.ModuleType("tumblepipe.pipe.houdini.ui.widgets")
+    fake.EntitySelectorDialog = Picker
+    saved_module = sys.modules.get(fake.__name__)
+    sys.modules[fake.__name__] = fake
+    import_rigs.hou = _HouNoUi(statuses)
+    try:
+        _run("Browse Rigs... runs", lambda: import_rigs.browse({"node": native}))
+    finally:
+        import_rigs.hou = hou
+        if saved_module is None:
+            sys.modules.pop(fake.__name__, None)
+        else:
+            sys.modules[fake.__name__] = saved_module
+    rows = [
+        (native.parm(f"entity{i}").eval(), native.parm(f"version{i}").eval(),
+         native.parm(f"instances{i}").eval())
+        for i in range(1, native.parm("rig_imports").eval() + 1)
+    ]
+    check("the picker opened in multi-select", seen and seen[0].get("multi_select") is True, seen)
+    check("a row for the new rigged pick, the listed and unrigged ones not",
+          rows == [(str(OLD), "v0001", 1), (str(HERO), "latest", 1)], rows)
+    check("the status line counts and names the unrigged pick",
+          statuses == ["rigs: Added 1 rig, skipped 1 already in the list. "
+                       "No rig published: crate."], statuses)
+    # Import ran: it rebuilt the dive network from the rows (with APEX
+    # missing it stops at the first rig's instancing, after making it).
+    dive = native.node("dive")
+    imports = sorted(c.name() for c in dive.children() if c.type().name().startswith("th::import_rig"))
+    check("Import ran on the rows",
+          bool(imports) and set(imports) <= {"CHAR_hero_import", "CHAR_sidekick_import"}, imports)
+
+
+def _rows(native):
+    return [
+        (native.parm(f"entity{i}").eval(), native.parm(f"version{i}").eval(),
+         native.parm(f"instances{i}").eval(), native.parm(f"names{i}").eval(),
+         native.parm(f"skip{i}").eval())
+        for i in range(1, native.parm("rig_imports").eval() + 1)
+    ]
+
+
+def _copies_lop(parent, name, upstream, prims):
+    """A Python Script LOP after ``upstream`` adding ``prims``
+    (``(path, asset)``) stamped as import_asset stamps them."""
+    lop = parent.createNode("pythonscript", name)
+    lop.setInput(0, upstream)
+    lines = ["import hou", "from pxr import UsdGeom",
+             "stage = hou.pwd().editableStage()"]
+    for prim_path, asset in prims:
+        lines.append(f"UsdGeom.Xform.Define(stage, {prim_path!r})")
+        generated = import_metadata.asset_script(asset)
+        lines.append(generated.replace(
+            repr("/" + "/".join(asset.segments[1:])), repr(prim_path)))
+    lop.parm("python").set("\n".join(lines))
+    return lop
+
+
+def stage_asset_build(asset: Uri) -> Path:
+    """A staged build of ``asset`` holding its prim, as th::import_asset
+    loads it (the resolver is stood in for: this checkout's tumbleResolver
+    is not built here)."""
+    from pxr import Usd, UsdGeom
+    from tumblepipe.pipe.paths.staged import get_staged_file_path
+
+    staged = Path(get_staged_file_path(asset, "v0001"))
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    stage = Usd.Stage.CreateNew(str(staged))
+    UsdGeom.Xform.Define(stage, "/" + "/".join(asset.segments[1:-1]))
+    UsdGeom.Xform.Define(stage, "/" + "/".join(asset.segments[1:]))
+    stage.GetRootLayer().Save()
+    (staged.parent / "context.json").write_text(
+        json.dumps({"parameters": {"assets": []}}), encoding="utf-8")
+    return staged
+
+
+def check_follow_stage(lop) -> None:
+    print("6. Rig Sync: Follow Stage in a th::animate")
+    from tumblepipe import resolver
+    from tumblepipe.pipe.houdini import animate_sync
+
+    stage_net = lop.parent()
+    # The stage as import_shot would leave it, plus Pawn: two copies with a
+    # gap (pawn0, pawn2), as a layout edit leaves them
+    source = _copies_lop(stage_net, "with_pawns", lop,
+                         [("/CHAR/pawn0", PAWN), ("/CHAR/pawn2", PAWN)])
+    animate = stage_net.createNode("th::animate::2.0", "animate_follow")
+    animate.setInput(0, source)
+    rigs = animate_sync.rigs_in(animate)
+    check("a th::animate placed by hand starts with a th::import_rigs",
+          len(rigs) == 1, [r.path() for r in rigs])
+    if not rigs:
+        return
+    native = rigs[0]
+    check("Rig Sync defaults to Follow Stage",
+          native.parm("rig_sync").eval() == "follow", native.parm("rig_sync").eval())
+    check("Add Assets for Rigs defaults on", animate.parm("add_assets_for_rigs").eval() == 1)
+
+    # import_shot / import_assets end in this call
+    _run("sync after an import", lambda: animate_sync.sync_downstream(source))
+    rows = _rows(native)
+    check("the rows follow the stage: one per rigged asset, named after its copies",
+          rows == [(str(HERO), "latest", 2, "hero0 hero1", 0),
+                   (str(PAWN), "latest", 2, "pawn0 pawn2", 0),
+                   (str(OLD), "latest", 1, "sidekick", 0)], rows)
+    rig_names = sorted(
+        c.parm("names").eval() for c in native.node("dive").children()
+        if c.type().name().startswith("th::import_rig::"))
+    check("each rig import names its characters after the stage copies (gaps kept)",
+          rig_names == ["hero0 hero1", "pawn0 pawn2", "sidekick"], rig_names)
+    check("the comment names the animatable asset with no rig",
+          "Animatable, no rig published: ball" in native.comment(), repr(native.comment()))
+    check("sync_version is set", native.parm("sync_version").eval() == 1)
+
+    # A pinned version and Skip survive; a sync with nothing moved sets nothing
+    native.parm("version1").set("v0001")
+    native.parm("skip3").set(1)
+    # Parm and userData writes are what dirty a workfile (QA ledger 51:
+    # setting the value a parm holds dirties it too)
+    written = []
+    watched = [native] + list(native.node("dive").children())
+    events = (hou.nodeEventType.ParmTupleChanged, hou.nodeEventType.CustomDataChanged)
+
+    def record(**kwargs):
+        written.append((kwargs["node"].name(), str(kwargs["event_type"]),
+                        getattr(kwargs.get("parm_tuple"), "name", lambda: "")()))
+
+    for watched_node in watched:
+        watched_node.addEventCallback(events, record)
+    try:
+        animate_sync.sync_downstream(source)
+    finally:
+        for watched_node in watched:
+            watched_node.removeEventCallback(events, record)
+    check("a sync with nothing moved sets no parm and no user data", not written, written)
+
+    # An asset added on the stage: a row appears, pins kept
+    added = _copies_lop(stage_net, "with_kid", source, [("/CHAR/kid", KID)])
+    animate.setInput(0, added)
+    _run("sync after the stage gained an asset", lambda: animate_sync.sync_downstream(added))
+    rows = _rows(native)
+    check("a row appears for the new asset; the pin and Skip stay",
+          rows == [(str(HERO), "v0001", 2, "hero0 hero1", 0),
+                   (str(PAWN), "latest", 2, "pawn0 pawn2", 0),
+                   (str(OLD), "latest", 1, "sidekick", 1),
+                   (str(KID), "latest", 1, "kid", 0)], rows)
+
+    # Drift: the stage moves on with nothing synced, the cook only warns
+    check("no drift warning while in sync",
+          animate_sync.drift_message(animate.node("anim_dive"),
+                                     animate.node("IN_stage_start").stage()) == "")
+    animate.setInput(0, source)
+    drift = animate_sync.drift_message(animate.node("anim_dive"),
+                                       animate.node("IN_stage_start").stage())
+    check("a stage changed since the sync warns at cook, rows untouched",
+          "changed since th::import_rigs last synced" in drift and len(_rows(native)) == 4,
+          drift)
+    animate.setInput(0, added)
+
+    # Add Characters for an asset not on the stage: the managed import
+    staged = stage_asset_build(VILLAIN)
+    saved = resolver.try_resolve_entity_uri
+
+    def resolve(uri):
+        if "villain" in str(uri):
+            return str(staged)
+        return saved(uri)
+
+    resolver.try_resolve_entity_uri = resolve
+    try:
+        status = []
+        _run("Add Characters runs",
+             lambda: status.append(import_rigs.add_characters_to(native, [str(VILLAIN), str(HERO)])))
+    finally:
+        resolver.try_resolve_entity_uri = saved
+    managed = animate.input(0)
+    check("a managed th::import_assets sits just above th::animate",
+          managed is not None and managed.type().name().startswith("th::import_assets")
+          and managed.userData(animate_sync.MANAGED_KEY) == animate.name()
+          and managed.input(0) == added,
+          managed.path() if managed else None)
+    if managed is not None:
+        entities = [managed.parm(f"entity{i}").eval()
+                    for i in range(1, managed.parm("asset_imports").eval() + 1)]
+        check("it imports the picked asset off the stage, not the one on it",
+              entities == [str(VILLAIN)], entities)
+    rows = _rows(native)
+    check("the rig row follows the asset onto the stage",
+          (str(VILLAIN), "latest", 1, "villain", 0) in rows, rows)
+    check("the status line says what was added",
+          status and "Added to the stage: villain." in status[0]
+          and "Already in: hero." in status[0], status)
+
+    # Instances on a managed asset goes to the managed import's row
+    index = [r[0] for r in rows].index(str(VILLAIN)) + 1 if str(VILLAIN) in [r[0] for r in rows] else 0
+    if index:
+        resolver.try_resolve_entity_uri = resolve
+        try:
+            native.parm(f"instances{index}").set(3)
+            _run("Instances edit routes", lambda: animate_sync.route_instances(native, index))
+        finally:
+            resolver.try_resolve_entity_uri = saved
+        check("an Instances edit on a managed asset sets its import's copies",
+              managed is not None and managed.parm("instances1").eval() == 3,
+              managed.parm("instances1").eval() if managed else None)
+        rows = _rows(native)
+        check("and the row follows the new copies",
+              (str(VILLAIN), "latest", 3, "villain0 villain1 villain2", 0) in rows, rows)
+
+    # Manual: an import never touches the rows
+    native.parm("rig_sync").set("manual")
+    before = _rows(native)
+    animate.setInput(0, source)
+    animate_sync.sync_downstream(source)
+    check("Manual: a sync leaves the rows alone", _rows(native) == before, _rows(native))
+
+
+CLIP = "/animation/default.clip"
+
+
+def _keys_geometry(entries):
+    """A Scene Animate's ``animation`` as Animate keeps it: per
+    ``(character, layer)`` (layer '' for the base), channel -> (frames,
+    values), each entry with its ``rig_path``."""
+    geo = hou.Geometry()
+    for (character, layer), channels in entries.items():
+        entry = hou.Geometry()
+        name = entry.addAttrib(hou.attribType.Prim, "name", "")
+        entry.addAttrib(hou.attribType.Global, "rig_path", "")
+        entry.setGlobalAttribValue("rig_path", f"/{character}.char/Base.rig")
+        for channel_name, (frames, values) in channels.items():
+            channel = entry.createChannelPrim()
+            channel.setAttribValue(name, channel_name)
+            for frame in frames:
+                channel.insertKey(frame)
+            channel.setKeyValues(values)
+        folder = f"{CLIP}/{layer}" if layer else CLIP
+        geo.packToFolder(f"{folder}/_{character}.char_Base", entry)
+    return geo
+
+
+def _entries(node):
+    """``{path: (rig_path, {channel: (frames, values, slopes)})}`` of the
+    key entries Scene Animate ``node`` keeps."""
+    stored = node.parm("animation").evalAsGeometry()
+    found = {}
+    if stored is None:
+        return found
+    for path in stored.extractPackedPaths(f"{CLIP}/**"):
+        if not path.endswith(".char_Base"):
+            continue
+        entry = stored.unpackFromFolder(path)
+        channels = {}
+        for prim in entry.prims():
+            if hasattr(prim, "keyFrames"):
+                channels[prim.attribValue("name")] = (
+                    tuple(prim.keyFrames()), tuple(prim.keyValues()), tuple(prim.keySlopes()))
+        found[path] = (entry.attribValue("rig_path"), channels)
+    return found
+
+
+def check_move_keys(lop) -> None:
+    print("7. Rig Sync: a keyed character animated alone, its asset now two copies")
+    from tumblepipe.pipe.houdini import animate_sync
+    from tumblepipe.pipe.houdini.lops import animate_invoke
+    from tumblepipe.pipe.houdini.sops import layout_keys_rows
+
+    stage_net = lop.parent()
+    one = _copies_lop(stage_net, "kid_alone", lop, [("/CHAR/kid", KID)])
+    animate = stage_net.createNode("th::animate::2.0", "animate_move")
+    animate.setInput(0, one)
+    dive = animate.node("anim_dive")
+    native = animate_sync.rigs_in(animate)[0]
+    _run("sync on one copy", lambda: animate_sync.sync_downstream(one))
+    row = [r for r in _rows(native) if r[0] == str(KID)]
+    check("one copy: the character is kid", [r[3] for r in row] == ["kid"], row)
+    scene_animate = next(c for c in dive.children()
+                         if c.type().name().startswith("apex::sceneanimate"))
+    # Keyed in Scene Animate: a base entry and one on a layer
+    scene_animate.parm("animation").set(_keys_geometry({
+        ("kid", ""): {"Main_tx": ((1, 12, 24), (0.0, 1.5, 4.0)), "Main_ry": ((1,), (30.0,))},
+        ("kid", "copied"): {"Main_ty": ((1, 24), (0.0, 2.0))},
+    }))
+    before = _entries(scene_animate)
+    # th::animate's Characters and a th::layout_keys row name kid
+    count = animate.parm(animate_invoke.MULTIPARM).eval()
+    if "kid" not in [animate.evalParm(f"character{i}") for i in range(1, count + 1)]:
+        animate.parm(animate_invoke.MULTIPARM).set(count + 1)
+        animate.parm(f"character{count + 1}").set("kid")
+    layout = layout_keys_rows.create(dive, "layout_keys").native()
+    layout_keys_rows.LayoutKeys(layout).set_rows([{"on": True, "character": "kid",
+                                                   "target": "kid", "version": "latest"}])
+
+    two = _copies_lop(stage_net, "kid_twice", lop, [("/CHAR/kid0", KID), ("/CHAR/kid1", KID)])
+    animate.setInput(0, two)
+    moved = {path.replace("_kid.char_Base", "_kid0.char_Base"): (
+        "/kid0.char/Base.rig", channels) for path, (_rig, channels) in before.items()}
+    # The sync alone first (the import after it is undo steps of its own)
+    node = import_rigs.ImportRigs(native)
+    result = node.sync()
+    check("kid0 carries kid's keys, base and layer, as they were (rig_path renamed)",
+          _entries(scene_animate) == moved, sorted(_entries(scene_animate)))
+    check("the sync's notes say the keys moved", "kid -> kid0" in "\n".join(result.notes),
+          result.notes)
+    if hou.undos.areEnabled():
+        hou.undos.performUndo()
+        back = [r[3] for r in _rows(native) if r[0] == str(KID)]
+        check("one undo puts kid's keys and its row back together",
+              _entries(scene_animate) == before and back == ["kid"],
+              (sorted(_entries(scene_animate)), back))
+        hou.undos.performRedo()
+        check("and redo moves them again", _entries(scene_animate) == moved,
+              sorted(_entries(scene_animate)))
+    else:
+        print("  note undo: undos are off in this hython; the undo step is not checked")
+    _run("sync on two copies", lambda: animate_sync.sync_downstream(two))
+    after = _entries(scene_animate)
+    check("after the import's sync too, kid0 has kid's keys and nothing of kid is left",
+          after == moved, sorted(after))
+    row = [r for r in _rows(native) if r[0] == str(KID)]
+    check("the row follows the two copies, kid gone",
+          [r[3] for r in row] == ["kid0 kid1"], row)
+    names = [animate.evalParm(f"character{i}")
+             for i in range(1, animate.parm(animate_invoke.MULTIPARM).eval() + 1)]
+    check("th::animate's Characters row is kid0, no kid", "kid0" in names and "kid" not in names,
+          names)
+    layout_rows = layout_keys_rows.LayoutKeys(layout).get_rows()
+    check("th::layout_keys' row is kid0",
+          [(r["character"], r["target"]) for r in layout_rows] == [("kid0", "kid0")],
+          layout_rows)
+
+    # Once moved, a sync moves and sets nothing
+    written = []
+    watched = [native, scene_animate, animate, layout]
+
+    def record(**kwargs):
+        written.append((kwargs["node"].name(), str(kwargs["event_type"])))
+
+    events = (hou.nodeEventType.ParmTupleChanged, hou.nodeEventType.CustomDataChanged)
+    for node in watched:
+        node.addEventCallback(events, record)
+    try:
+        animate_sync.sync_downstream(two)
+    finally:
+        for node in watched:
+            node.removeEventCallback(events, record)
+    check("a second sync sets no parm and no user data", not written, written)
+
+    # X0 with keys of its own: kid is kept beside it, nothing overwritten
+    animate.setInput(0, one)
+    scene_animate.parm("animation").set(_keys_geometry({
+        ("kid", ""): {"Main_tx": ((1, 24), (0.0, 4.0))},
+    }))
+    _run("sync back on one copy", lambda: animate_sync.sync_downstream(one))
+    scene_animate.parm("animation").set(_keys_geometry({
+        ("kid", ""): {"Main_tx": ((1, 24), (0.0, 4.0))},
+        ("kid0", ""): {"Main_tz": ((1, 24), (0.0, 7.0))},
+    }))
+    before = _entries(scene_animate)
+    animate.setInput(0, two)
+    _run("sync with kid0 keyed", lambda: animate_sync.sync_downstream(two))
+    check("kid0 keyed already: nothing moved, nothing overwritten",
+          _entries(scene_animate) == before, sorted(_entries(scene_animate)))
+    row = [r for r in _rows(native) if r[0] == str(KID)]
+    check("kid is kept beside kid0 and kid1", [r[3] for r in row] == ["kid0 kid1 kid"], row)
+    check("the comment says why", "kid kept beside kid0" in native.comment(),
+          repr(native.comment()))
+
+
+def check_import_rig_hidden() -> None:
+    print("5. th::import_rig is hidden from TAB, and still made by name")
+    from tumblepipe import startup
+
+    startup.hide_retired_node_types()
+    rig_type = hou.nodeType(hou.sopNodeTypeCategory(), "th::import_rig::1.0")
+    rigs_type = hou.nodeType(hou.sopNodeTypeCategory(), "th::import_rigs::2.0")
+    check("th::import_rig is hidden", rig_type is not None and rig_type.hidden(),
+          rig_type.hidden() if rig_type else None)
+    check("th::import_rigs is not", rigs_type is not None and not rigs_type.hidden())
+    geo = hou.node("/obj").createNode("geo", "hidden_rig")
+    try:
+        made = geo.createNode("th::import_rig::1.0", "rig")
+        check("createNode still makes th::import_rig", made is not None)
+    except hou.OperationFailed as exc:
+        check("createNode still makes th::import_rig", False, str(exc))
+
+
 def main() -> int:
     print(f"project: {PROJECT}")
     project = Path(api.storage.resolve(Uri.parse("project:/")))
@@ -250,18 +698,25 @@ def main() -> int:
         (BALL, {"name": "ball", "animatable": True}),
         (CRATE, {"name": "crate"}),
         (OLD, {"name": "sidekick"}),
+        (PAWN, {"name": "pawn"}),
+        (KID, {"name": "kid"}),
+        (VILLAIN, {"name": "villain"}),
     ):
         if api.config.get_properties(uri) is None:
             api.config.add_entity(uri, properties)
         elif properties:
             api.config.set_own_properties(uri, {**(api.config.get_own_properties(uri) or {}), **properties})
-    publish_rig(HERO)
-    publish_rig(OLD)
+    for asset in (HERO, OLD, PAWN, KID, VILLAIN):
+        publish_rig(asset)
 
     lop = shot_stage()
     check_stamps(lop)
     check_discover(lop)
     check_stage_default(lop)
+    check_browse_rigs()
+    check_follow_stage(lop)
+    check_move_keys(lop)
+    check_import_rig_hidden()
 
     print()
     if FAILURES:

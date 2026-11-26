@@ -46,6 +46,7 @@ from tumblepipe.farm.pipelines import composite as composite_pipeline
 from tumblepipe.farm.specs import composite as composite_spec
 from tumblepipe.farm.pipelines import preview
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.specs import repair as repair_spec
 from tumblepipe.farm.specs import preview_frames
 from tumblepipe.farm.specs import submission
@@ -258,12 +259,15 @@ class RenderPlan:
 
 @dataclass(frozen=True)
 class PlayblastPlan:
-    """A checked playblast (``specs.playblast.valid_look``)."""
+    """A checked playblast (``specs.playblast.valid_look``). ``frames`` is
+    ``(first, last, step)``, rolls on (``submission.playblast_frames``),
+    None to play the shot's own range."""
     department: str
     pool: str
     priority: int
     res: list
     look: dict
+    frames: tuple[int, int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -670,6 +674,8 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
             priority=pb_priority,
             res=pb_res,
             look=pb_look,
+            # Checked above (submission.playblast_problems).
+            frames=submission.playblast_frames(settings),
         ) if do_playblast else None,
         comp=comp_block,
         comp_range=comp_range,
@@ -841,6 +847,11 @@ def _collapse_config(plan: EntityPlan, after_publish: bool, user_name: str) -> d
             res=list(playblast.res),
             look=dict(playblast.look),
         )
+        if playblast.frames is not None:
+            first, last, step = playblast.frames
+            config['playblast']['frames'] = dict(
+                first_frame=first, last_frame=last, step_size=step,
+            )
     return config
 
 
@@ -941,7 +952,7 @@ def _playblast_job(
     try:
         playblast_input = preview.collapse_playblast_input(
             entity_uri, playblast.department, temp_path, paths,
-            light=playblast.look['light'],
+            light=playblast_spec.collapse_light(playblast.look),
         )
         playblast_config = preview.playblast_config(
             entity_uri,
@@ -952,6 +963,9 @@ def _playblast_job(
             priority=playblast.priority,
             res=playblast.res,
             look=playblast.look,
+            # Left out when the settings send no frames, as the record's
+            # callers (tests/test_batch_submit_calls.py) do: the shot's.
+            **({} if playblast.frames is None else {'frames': playblast.frames}),
         )
     except preview.PreviewError as e:
         raise BatchSubmitError(str(e)) from e
@@ -1087,7 +1101,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   to edit and Comp follow it.
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res, pb_look
-                                     (specs.playblast.valid_look)
+                                     (specs.playblast.valid_look), and
+                                     optionally pb_first_frame,
+                                     pb_last_frame, pb_step, pb_pre_roll,
+                                     pb_post_roll (farm.specs.submission
+                                     .playblast_frames); without a First
+                                     and Last the shot's own range plays,
+                                     rolls included, every frame
                 - comp: bool (required; shots) - re-comp the shot's newest
                         composite workfile; with render it waits for the
                         full render's denoise, else the render

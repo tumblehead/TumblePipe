@@ -319,7 +319,11 @@ one channel (a puzzle matte; re-render it with `th::mattes`).
 
 Imports follow new renders like every other import: opening the workfile
 re-resolves each one on `latest` (`scene_imports.REFRESH_SPECS`), and
-**Update** does it by hand.
+**Update** does it by hand. An open re-runs only the render imports whose
+renders moved or that could not resolve last time, not every import in the
+comp (their spec is `independent`, see [Composition → Picking up new
+versions on open](composition.md#picking-up-new-versions-on-open)), so one
+shot without a render no longer slows every open of a Multi comp.
 
 **Render** renders what the import reads again: it opens Farm Submit with
 the shot's Render ticked, the import's channel checked (all of them for
@@ -597,9 +601,12 @@ each keeping the name it was written with:
   `/Render` only when the root layer names it) — then encodes an MP4 and
   writes the
   versioned playblast
-  **and** the daily, exactly like the render/composite MP4s above. The
-  frame range (rolls included) and fps come from the shot config per
-  shot. So do resolution (the shot's render resolution, 1280 × 720 when it
+  **and** the daily, exactly like the render/composite MP4s above. The fps
+  comes from the shot config per shot. So do the frame range (rolls
+  included; the dialog's **Frames**, **Step** and **Pre / Post roll** set
+  a shorter one, and **Match Render** the render's, see
+  [Farm Submit → Playblast](asset-browser/submit-jobs.md#playblast-shots-only)),
+  resolution (the shot's render resolution, 1280 × 720 when it
   has none), the look (Renderer, Light, Samples, Materials) and pool/priority, unless you
   change them in the dialog: those fields are tri-state, and an untouched
   one lets every checked shot use its own configured value rather than
@@ -833,7 +840,12 @@ the materials back on. The dome is authored into the collapsed stage
 (`/TumblePipePlayblastLights/dome`, every scene light deactivated beside
 it); husk's own `--headlight dome` cannot do it, since Karma's headlight
 ignores the mode. Lights inside an instance cannot be deactivated from
-the collapse and stay lit beside the dome. A Karma playblast takes a Karma
+the collapse and stay lit beside the dome. **Light** is Karma's alone: a
+`viewport` playblast's stage is collapsed with the scene's lights as they
+are, whatever **Light** says, and lit as its **Lighting** says (up to
+1.133 the hidden default *dome* reached it too, so a TumbleView farm
+playblast set to Lighting *scene* came out flat under the dome; see
+`farm.specs.playblast.collapse_light`). A Karma playblast takes a Karma
 licence. That difference is exactly why the in-session node stays — playblast locally when the look must
 match the viewport, submit to the farm to offload a batch. The farm job's
 Deadline group is `karma`, the same GPU workers final renders use, see

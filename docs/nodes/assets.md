@@ -319,7 +319,11 @@ Gotchas:
 
 ## `th::import_rig` (SOP)
 
-Load one published rig and add it to an APEX scene. `_TumblePipe/pipeline`.
+Load one published rig and add it to an APEX scene. The building block
+[`th::import_rigs`](#thimport_rigs-sop) makes a chain of, one per row: add
+rigs with that node. Hidden from the TAB menu (and the Asset Browser's
+Nodes; `startup.UTILITY_NODE_TYPES`); placed nodes load and
+work as before, and scripts still create it by name.
 Assets only: `from_context` inside a shot workfile resolves to nothing.
 Source: [`otls/sop_th.import_rig.1.0`](../../otls/sop_th.import_rig.1.0/th_8_8Sop_1import__rig_8_81.0/DialogScript),
 [`sops/import_rig.py`](../../python/tumblepipe/pipe/houdini/sops/import_rig.py).
@@ -375,7 +379,7 @@ named for would stay unanimated, so the node warns, naming both sides:
 > Roommate2 are not on the stage: they start at the origin with no lookdev.
 > Roommate on the stage is not animated. Press Set Scene Copies on
 > th::import_rigs to set the shot's scene to 3 copies of Roommate, or set
-> its instances in the Entity Editor, then press Discover on
+> its instances in the Entity Editor, then press Add Rigs from Scene on
 > th::import_rigs.
 
 It is a warning only; the rig still imports and cooks. **Import** adds it
@@ -384,9 +388,9 @@ SOP inside raises it as a cook warning whenever the stage changes. Houdini
 shows a warning only on the node that raised it, not on the subnet or
 asset around it, so the comment is where to look. The fix is upstream: set
 the asset's instances on the shot's scene (the Entity Editor's scene
-assets) so the shot stage has the copies, then **Discover** on
+assets) so the shot stage has the copies, then **Add Rigs from Scene** on
 `th::import_rigs`, which sets each row's Instances from the stage. When
-the stage has *more* copies than the rig makes, Discover alone is the fix,
+the stage has *more* copies than the rig makes, Add Rigs from Scene alone is the fix,
 and the warning's last sentence says only that.
 
 **Set Scene Copies** (beside **Import**) does the upstream fix in one
@@ -409,7 +413,7 @@ click when the rig makes more characters than the stage has copies.
 4. It stages the Root as the Entity Editor's Apply does
    (`root_staging.sync_roots` for the shot), re-imports the
    `th::import_shot` so the stage holds the new copies, and imports again
-   (inside `th::import_rigs`, that node's **Discover** runs once the click
+   (inside `th::import_rigs`, that node's **Add Rigs from Scene** runs once the click
    is done). A `th::import_shot` pinned to a version keeps the copies it
    was built with, and the status bar says to set it to `latest`.
 
@@ -424,12 +428,15 @@ Several rigs in one node, one row each, with a version pin per row.
 Source: [`otls/sop_th.import_rigs.2.0`](../../otls/sop_th.import_rigs.2.0/th_8_8Sop_1import__rigs_8_82.0/DialogScript),
 [`sops/import_rigs.py`](../../python/tumblepipe/pipe/houdini/sops/import_rigs.py).
 
-**Discovery** finds the rows on a USD stage:
+**Discovery** finds the rows on a USD stage, or adds rigs you pick:
 
 | Label | Default | What it does |
 |---|---|---|
-| Stage | *(empty)* | LOP node whose stage **Discover** reads. Empty: the stage fed into the `th::animate` this node sits in; outside one, Discover says to set it |
-| Discover | | Replaces the rows with one per asset whose prims are tagged `animatable` ([the stamp](../composition.md#instanceable-copies-and-animatable-assets)) and that has a rig published, **Instances** = its tagged prims, then imports. A row the stage still animates keeps its Channel and Version; a new row takes the channel the shot imports the asset in when that has a rig, else the first one that does, on `latest`. Animatable assets with no rig are named in the comment, *Animatable, no rig published: Ball* |
+| Rig Sync | Follow Stage | **Follow Stage**: the rows follow the stage entering `th::animate` (see [Follow Stage](#follow-stage) below). **Manual**: the rows change only when you change them, as before Rig Sync. There is no project-level default; each node keeps its own |
+| Stage | *(empty)* | LOP node whose stage **Add Rigs from Scene** reads. Empty: the stage fed into the `th::animate` this node sits in; outside one, it says to set Stage |
+| Add Rigs from Scene | | Replaces the rows with one per asset whose prims are tagged `animatable` ([the stamp](../composition.md#instanceable-copies-and-animatable-assets)) and that has a rig published, **Instances** = its tagged prims, then imports. A row the stage still animates keeps its Channel and Version; a new row takes the channel the shot imports the asset in when that has a rig, else the first one that does, on `latest`. Animatable assets with no rig are named in the comment, *Animatable, no rig published: Ball*. On Follow Stage it is **Sync Now**: the rows follow the stage at once (rows are kept, never replaced; see below). Formerly labelled **Discover**; the parm is still `discover`, so scripts and saved scenes are unchanged |
+| Browse Rigs... | | On Follow Stage: **Add Characters** (below); the picker lists only assets with a rig published. On Manual: opens the asset picker (*Add Rigs*) in multi-select mode, as `th::import_assets`' top [Browse...](import-and-export.md#thimport_assets-lop) does: click, **Ctrl-click**, **Shift-click** or **Select all in view**. **Select** adds a row per picked asset that has a rig published and no row yet, in the picker's order, on its `default` channel (else the first channel with a rig), `latest`, one instance, then imports, as **Import** does. Rows already there are left as they are. The status bar says how many were added and skipped and names picks with no rig, e.g. *rigs: Added 2 rigs, skipped 1 already in the list. No rig published: Tree.* Cancel changes nothing |
+| Add Held to Stage | | Follow Stage: every row held because its asset is not on the stage (see below) gets the asset added, through the `th::import_assets` `th::animate` manages, then the rows follow |
 
 An asset is animatable when its **Animatable** box is on or it has a rig
 published in any channel (the Entity Editor's *No, rigged*), so a rigged
@@ -439,10 +446,11 @@ character is found with the box off and a prop needs the box and a rig.
 
 | Label | Default | What it does |
 |---|---|---|
-| **Browse...** + label | *(empty)* | The row's asset: **Browse...** re-picks it. No `from_context` here. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
+| **Browse...** + label | *(empty)* | The row's asset: **Browse...** re-picks it, then imports, as **Import** does (Cancel changes nothing). No `from_context` here. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
 | Channel | `default` | Per row; an invalid value snaps to the first channel |
 | Version | `latest` | Per row, `latest` or `v####`; the label shows what resolved |
-| Instances | `1` | Copies of that rig (1–10) |
+| Instances | `1` | Copies of that rig (1–10). On Follow Stage the stage sets it; an edit goes to where the copies come from (see below) |
+| Skip | off | Follow Stage: the row stays (and is kept on every sync) but imports no rig; the comment lists it under *Skipped*. Add Characters on its asset turns it off |
 
 **Import** rebuilds the dive network as a chain of `th::import_rig` nodes,
 one per row, each pinned to the row's channel and version (`latest`
@@ -454,28 +462,105 @@ configured*. A row whose characters are not the copies the shot stage
 holds (Instances set by hand, not from the shot's scene) adds its
 [`th::import_rig` warning](#thimport_rig-sop) to the comment, once per
 asset, and to the status bar. Set the instances on the shot's scene in the
-Entity Editor and press **Discover**: the rows then take their Instances
-from the stage.
+Entity Editor and press **Add Rigs from Scene**: the rows then take their
+Instances from the stage.
 
 **Set Scene Copies** (beside **Import**) does that in one click for every
 row whose Instances makes more characters than the stage has copies:
 after one confirm listing the shot, its Root and each asset's old -> new
 count, it writes the rows' Instances into the shot's Root, stages it,
-re-imports the shot's `th::import_shot` and runs **Discover**, so every
-character lands on a stage copy with its lookdev. See
+re-imports the shot's `th::import_shot` and runs **Add Rigs from Scene**,
+so every character lands on a stage copy with its lookdev. See
 [`th::import_rig`](#thimport_rig-sop) for what it writes and what it
 refuses. Rows the stage already matches, or has more copies of, are left
-alone (Discover is their fix).
+alone (Add Rigs from Scene is their fix).
 
-The animation shot template fills the rows once, when the workfile is
-created, the way Discover does from the imported shot. Rows are not
-re-synced later: press **Discover** to pick up a character rigged or made
-animatable since, or add one with `+`.
+The animation shot template fills the rows when the workfile is created,
+the way Add Rigs from Scene does from the imported shot.
+
+### Follow Stage
+
+On **Follow Stage** (the default) the rows follow the stage entering
+`th::animate`: one row per asset on it that is animatable and has a SOP
+rig, **Instances** its copies, and each character named after its stage
+copy (`hero0`, `hero2` when a layout edit left a gap; a hidden `names`
+parm on the row and on its `th::import_rig` carries them). The planner is
+[`sops/rig_sync.py`](../../python/tumblepipe/pipe/houdini/sops/rig_sync.py)
+(pure), the Houdini side
+[`animate_sync.py`](../../python/tumblepipe/pipe/houdini/animate_sync.py).
+
+The rows sync, and import again only when they changed:
+
+- at the end of **Import** on a `th::import_shot` or `th::import_assets`
+  that feeds the `th::animate`;
+- when the workfile opens, after its imports refresh;
+- on **Add Rigs from Scene** (Sync Now), **Add Characters** and Import.
+
+A cook never changes the rows: when the stage changed since the last sync
+(the shot re-imported by hand, an input rewired), the `place` SOP warns
+*The shot stage changed since th::import_rigs last synced its rows*, and
+Sync Now picks it up. A sync with nothing moved sets no parm, so it never
+marks the workfile as changed. In a Multi workfile each member's
+`th::animate` follows its own `th::import_shot`.
+
+What a sync keeps:
+
+- A row's **Channel**, **Version** pin and **Skip** stay.
+- A row whose asset left the stage is **held** (kept, imported, named in
+  the comment *Not on the stage (held)*) when it was there before Rig
+  Sync or a character of it has keys in a Scene Animate; otherwise it
+  goes. **Add Held to Stage** puts the asset back, or remove the row.
+- A character with keys is never dropped: when its copy leaves the stage
+  the row keeps the name, *Keyed, not on the stage (kept)*.
+- When one copy becomes several (`hero` -> `hero0`, `hero1`: a layout
+  duplicated an asset animated alone), `hero`'s keys move to `hero0`, the
+  copy left where `hero` was. In every Scene Animate of the dive, all of
+  `hero`'s keys (its own and those on each layer, channels exactly as they
+  were) and anything Animate saved of the character become `hero0`'s;
+  `th::animate`'s **Characters** row and the `th::layout_keys` row for
+  `hero` are renamed `hero0`. The comment says *Keys moved to the first
+  copy (one copy became several): hero -> hero0*, and a line under it
+  names the Scene Animates the keys moved in. The rows and the keys move as one undo step:
+  **Edit > Undo** puts both back. Keys are never overwritten: when `hero0`
+  has keys of its own already, nothing moves, `hero` stays on the row
+  beside `hero0` and `hero1`, and the comment says *hero kept beside
+  hero0*; copy what `hero0` needs with Copy Animation, then remove
+  `hero`'s keys. The move happens only in a sync (an import, the workfile
+  opening, Sync Now), never in a cook, and a sync with nothing to move
+  writes nothing.
+- An animatable asset with no rig is named, *Animatable, no rig published*;
+  one whose rig is a LOP rig is named too, as `th::import_layer` brings it.
+
+**Add Characters** (**Browse Rigs...** here, or **Add Characters...** on
+`th::animate`) picks assets with a rig published:
+
+- one already on the stage gets its row (or, skipped, is un-skipped);
+- one not on the stage is added to it, through a `th::import_assets`
+  `th::animate` manages just above itself (made on first use, named
+  `<animate>_characters`, on `latest`), and its row follows;
+- with `th::animate`'s **Add Assets for Rigs** off, only the rig row is
+  added (held, with its asset not on the stage), as Manual does;
+- one in the shot's scene but missing from the stage says to re-import the
+  shot.
+
+**Instances** on Follow Stage goes to where the copies come from: an
+asset of the managed `th::import_assets` sets its row there; one from the
+shot's scene (Root) runs **Set Scene Copies** for it (with its confirm);
+one a department upstream publishes is refused, naming the department to
+change it in. The row's value then shows the stage's again.
+
+An existing node (from before Rig Sync) switches to Follow Stage on its
+first sync: rows matching the stage change nothing, others are held and
+the comment says *Rig Sync is now Follow Stage* with what it held. The
+stage is never changed by a sync; headless and farm runs never write the
+Root.
 
 Gotchas:
 
-- Picking an entity on a row updates its labels but does **not** import;
-  press **Import**.
+- On Manual, **Browse Rigs...** gives a new row one instance, whatever the shot's
+  scene has; if the stage holds more copies, the row warns (see
+  [`th::import_rig`](#thimport_rig-sop)) until **Add Rigs from Scene** or
+  **Set Scene Copies** matches them.
 - A row with an empty entity raises on Import, naming the row; it is never
   filled with the first asset.
 

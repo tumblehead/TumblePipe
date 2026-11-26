@@ -201,8 +201,8 @@ def copies_question(shot_uri: Uri, scene_uri: Uri, changes, other_shots=()) -> s
             'they get these copies too.')
     lines.append(
         'Every department that imports the shot reads its scene. After the '
-        'write the Root is staged, the shot is re-imported and Discover '
-        'maps the characters onto the stage copies.')
+        'write the Root is staged, the shot is re-imported and Add Rigs from '
+        'Scene maps the characters onto the stage copies.')
     return '\n'.join(lines)
 
 
@@ -260,7 +260,7 @@ def set_scene_copies(shot_uri: Uri, wanted, *, store, confirm, restage,
         raise CopiesRefused(
             'No rig import makes more characters than the shot stage has '
             'copies: there is no count to write. Where the stage has more '
-            'copies than the rig import, press Discover.')
+            'copies than the rig import, press Add Rigs from Scene.')
     scene_uri, _ = scene_config.get_inherited_scene_ref_in(store, shot_uri)
     if scene_uri is None:
         raise CopiesRefused(
@@ -298,7 +298,7 @@ def set_scene_copies(shot_uri: Uri, wanted, *, store, confirm, restage,
     if reimported is None:
         notes.append(
             'no th::import_shot feeds the th::animate: re-import the shot '
-            'stage, then press Discover')
+            'stage, then press Add Rigs from Scene')
         return 'Set Scene Copies: ' + '; '.join(notes)
     if reimported:
         notes.append(reimported)

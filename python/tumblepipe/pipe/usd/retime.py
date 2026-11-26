@@ -11,6 +11,7 @@ but stamps the samples at that other frame, and a USD ROP writing through it
 collapses the range to one sample.
 """
 
+import os
 from pathlib import Path
 
 from pxr import Sdf
@@ -62,32 +63,53 @@ def shift_layer(layer: Sdf.Layer, offset: float) -> int:
 
 
 def _shift_clips(clips: dict, offset: float) -> dict:
-    """Clip sets with their stage times moved; clip times stay."""
+    """Clip sets with their stage times moved; clip times stay.
+
+    Written back as ``double2[]`` (``Vt.Vec2dArray``): a list of tuples is
+    a list of VtValues to Sdf, which a usda layer writes but a crate layer
+    (a published ``.usd``) refuses to save."""
+    from pxr import Gf, Vt
     shifted = {}
     for name, clip_set in clips.items():
         clip_set = dict(clip_set)
         if 'active' in clip_set:
-            clip_set['active'] = [
-                (stage_time + offset, index)
+            clip_set['active'] = Vt.Vec2dArray([
+                Gf.Vec2d(stage_time + offset, index)
                 for stage_time, index in clip_set['active']
-            ]
+            ])
         if 'times' in clip_set:
-            clip_set['times'] = [
-                (stage_time + offset, clip_time)
+            clip_set['times'] = Vt.Vec2dArray([
+                Gf.Vec2d(stage_time + offset, clip_time)
                 for stage_time, clip_time in clip_set['times']
-            ]
+            ])
         shifted[name] = clip_set
     return shifted
 
 
 def shift_directory(directory: Path, offset: float) -> list[Path]:
     """:func:`shift_layer` on every layer file under ``directory``, saved in
-    place; the files changed. A ``0`` offset touches nothing."""
+    place; the files changed. A ``0`` offset touches nothing.
+
+    A clipped layer's clips (#108) are left as they are: the layer naming
+    them moves its clip sets' stage times and keeps their clip times, so
+    the clips' own frames must stay where they are.
+    """
+    from tumblepipe.pipe.usd.stitch import value_clip_files
+
     if offset == 0:
         return []
+    layer_paths = [
+        path for path in sorted(Path(directory).rglob('*'))
+        if path.suffix.lower() in LAYER_SUFFIXES and path.is_file()
+    ]
+    clip_files = set()
+    for path in layer_paths:
+        clip_files.update(
+            os.path.normcase(str(clip)) for clip in value_clip_files(path)
+        )
     changed = []
-    for path in sorted(Path(directory).rglob('*')):
-        if path.suffix.lower() not in LAYER_SUFFIXES or not path.is_file():
+    for path in layer_paths:
+        if os.path.normcase(os.path.normpath(str(path))) in clip_files:
             continue
         # Anonymous, so a layer the session (the ROP that just wrote it)
         # still holds open is neither edited in place nor read stale.

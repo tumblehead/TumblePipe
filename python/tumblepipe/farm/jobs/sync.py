@@ -22,5 +22,8 @@ def build(config, paths, staging_path):
         max_minutes = 20,
         paths = paths
     )
-    run_once(job, config['first_frame'], config['last_frame'])
+    # One task over the range: the limit is the whole copy's, 20 minutes
+    # plus 3 s a frame, at most 3 hours (run_once).
+    run_once(job, config['first_frame'], config['last_frame'],
+        minutes_per_frame = 0.05, most_minutes = 3 * 60)
     return job

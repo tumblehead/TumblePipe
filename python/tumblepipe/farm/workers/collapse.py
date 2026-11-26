@@ -97,6 +97,12 @@ def _submit_playblast(config, result, output_dir) -> None:
         priority=playblast['priority'],
         res=playblast['res'],
         look=playblast['look'],
+        # Farm Submit's Playblast frames; absent (an older submit): the
+        # shot's own range.
+        frames=(
+            tuple(playblast['frames'][key] for key in ('first_frame', 'last_frame', 'step_size'))
+            if 'frames' in playblast else None
+        ),
     ), paths)
 
 

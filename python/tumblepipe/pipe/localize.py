@@ -243,14 +243,18 @@ def _tile_glob(path: Path) -> list[Path]:
 
 
 def localize_external_assets(
-    layer_path, project_roots=(), skip_roots=(),
+    layer_path, project_roots=(), skip_roots=(), folder=None,
 ) -> LocalizeResult:
     """Make the layer's own asset paths (textures, HDRIs) survive the move.
+
+    ``folder`` is the folder that moves (default: the layer's own); a
+    clipped layer's clips (#108) sit one down from it, in ``clips/``, and
+    are localised into the version folder's ``EXTERNAL_DIR`` too.
 
     For each asset-valued path in the layer that is not a composition arc
     (arcs belong to ``localize_external_arcs`` and the escaping-path guard):
 
-    - inside the layer's folder: left alone;
+    - inside ``folder``: left alone;
     - under ``skip_roots`` (versioned caches): left alone;
     - under ``project_roots`` (shared project storage): pinned absolute, so
       a path the ROP made relative to the temp folder still resolves after
@@ -266,11 +270,15 @@ def localize_external_assets(
     layer_path = Path(layer_path)
     layer = open_layer(layer_path)
     layer_dir = layer_path.parent
-    layer_root = layer_dir.resolve()
+    folder = layer_dir if folder is None else Path(folder)
+    layer_root = folder.resolve()
     projects = _resolve_roots(project_roots)
     skip = _resolve_roots(skip_roots)
     arcs = set(arc_paths(layer))
-    external_root = layer_dir / EXTERNAL_DIR
+    external_root = folder / EXTERNAL_DIR
+    # How the layer names a copy: EXTERNAL_DIR/<name> from the folder's
+    # top, ../EXTERNAL_DIR/<name> from clips/
+    external_prefix = os.path.relpath(external_root, layer_dir).replace(os.sep, '/')
     used = _names_in(external_root)
     copied: dict = {}  # resolved source -> rewritten path
 
@@ -313,7 +321,7 @@ def localize_external_assets(
             else:
                 shutil.copy(files[0], external_root / name)
             used.add(name)
-            copied[key] = f'{EXTERNAL_DIR}/{name}'
+            copied[key] = f'{external_prefix}/{name}'
         result.rewritten[raw] = copied[key]
         return copied[key]
 

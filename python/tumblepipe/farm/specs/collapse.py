@@ -48,7 +48,12 @@ config = {
         'pool_name': 'string',
         'priority': 'int',
         'res': ['int', 'int'],
-        'look': {...}                    # specs.playblast.valid_look
+        'look': {...},                   # specs.playblast.valid_look
+        'frames': {                      # optional: Farm Submit's Playblast
+            'first_frame': 'int',        # frames, rolls on; absent: the
+            'last_frame': 'int',         # shot's own range, every frame
+            'step_size': 'int'
+        }
     }
 }
 
@@ -132,7 +137,19 @@ def _valid_playblast(playblast):
     if len(playblast['res']) != 2: return False
     if not all(is_int(value) for value in playblast['res']): return False
     if not valid_look(playblast.get('look')): return False
+    if 'frames' in playblast and not _valid_playblast_frames(playblast['frames']): return False
     return True
+
+
+def _valid_playblast_frames(frames):
+    """Farm Submit's Playblast frames (``submission.playblast_frames``):
+    whole numbers, a Step from 1. Their order is the submit's to check
+    (``submission.playblast_problems``), and ``preview.playblast_config``'s
+    again before the job is built."""
+    if not isinstance(frames, dict): return False
+    for key in ('first_frame', 'last_frame', 'step_size'):
+        if not check_int(frames, key): return False
+    return frames['step_size'] >= 1
 
 
 def is_valid_config(config):

@@ -38,7 +38,9 @@ known, or the frame list is not one Cinedex reads (:func:`expected_frames`).
 A playblast job is offered while it renders: its worker copies each
 finished frame beside the movie it will write (``<movie>.mp4.frames``,
 ``farm.workers.playblast.FrameMirror``) and removes them when it ends, so
-a finished playblast is played as its movie.
+a finished playblast opens its movie (Remy, 2026-11-26: it was disabled
+once done). ``cinedex --frames`` plays a movie as it plays a folder of
+frames (``previews.rs``, ``open_frames``).
 
 An mp4 job is not offered: its output is a movie, and the frames it encodes
 are another job's output, a row of their own in the same batch. A batch row
@@ -79,6 +81,8 @@ PLAYBLAST_KIND = 'playblast'
 
 #: The file kinds Cinedex shows as frames (``th_pipe::preview_place::FRAME_EXTENSIONS``).
 FRAME_EXTENSIONS = ('exr', 'jpg', 'jpeg')
+#: A finished playblast's movie, which Cinedex plays too.
+MOVIE_EXTENSION = '.mp4'
 
 #: The AOV a render's, a denoise's or a channel comp's frames are shown from.
 BEAUTY_AOV = 'beauty'
@@ -141,6 +145,12 @@ def has_frames(folder: Path) -> bool:
     except OSError:
         return False
     return False
+
+
+def is_movie_file(path: Path) -> bool:
+    """Whether ``path`` is a movie Cinedex plays, on disk (a finished
+    playblast's ``.mp4``; ``cinedex::reel::is_movie``)."""
+    return path.suffix.lower() == MOVIE_EXTENSION and path.is_file()
 
 
 def frames_folder(folder: Path) -> Path | None:
@@ -223,9 +233,12 @@ def _frames_target(row: JobRow) -> Target:
         frames = playblast_frames_dir(Path(row.outputs[0]))
         if has_frames(frames):
             return Target(row, frames)
+        movie = Path(row.outputs[0])
+        if is_movie_file(movie):
+            return Target(row, movie)
         return Target(row, reason=(
             "A playblast's frames are there only while it renders, from its "
-            'second frame on; when it is done, play its movie'
+            'second frame on, and its movie is not written yet'
         ))
     if row.kind not in FRAME_KINDS:
         what = f'a {row.kind} job' if row.kind else 'a job of an unknown kind'

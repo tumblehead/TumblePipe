@@ -419,7 +419,9 @@ widget stacks involved are pure PySide6:
   Playblast settings, offscreen: Materials is a `⟨per entity⟩` / Scene
   materials / Clay menu (not a tri-state box that reads as checked) that
   seeds, pins and unpins, and the rows the chosen Renderer ignores are
-  greyed out. Needs tumbletrove's Python (`TUMBLETROVE_PYTHON`, else the
+  greyed out; the Frames, Step and Pre / Post roll rows seed unpinned and
+  pin on an edit, and Match Render copies the Render's frames (a set field
+  pinned, a per-entity one unpinned, a Frame list as its span). Needs tumbletrove's Python (`TUMBLETROVE_PYTHON`, else the
   newest one hpm has fetched or installed):
   `uv run --python 3.12 --with pyside6 python scripts/verify_submit_playblast_section.py`.
 
@@ -2438,14 +2440,38 @@ temp project. Exits 1 on any failure.
 ## Rig discovery harness
 
 `scripts/verify_rig_discovery.py` checks the `animatable` prim stamp and
-`th::import_rigs`' **Discover** ([`th::import_rigs`](nodes/assets.md#thimport_rigs-sop))
+`th::import_rigs`' **Add Rigs from Scene** (parm `discover`; [`th::import_rigs`](nodes/assets.md#thimport_rigs-sop))
 in a throwaway project: the import nodes' metadata scripts stamp a rigged
 character and an animatable prop but not a static one, `import_layer`
 overwrites a stale stamp, and Discover, with Stage set and with it empty
 inside a `th::animate`, makes one row per rigged animatable asset, keeps a
 row's pinned version, judges an untagged prim by the rule and names an
-animatable asset with no rig. The rule itself is
-`tests/test_animation_template.py` and `tests/test_animatable_stamp.py`.
+animatable asset with no rig. It then presses **Browse Rigs...** with the
+picker stood in for (a rigged pick, an unrigged one, one already in a
+row): one row is added, the status line names the unrigged pick, and the
+node imports. Section 6 drives Rig Sync on Follow Stage in a `th::animate`
+placed by hand: a sync after an import makes one row per rigged stage
+asset named after its copies (a gap kept), a second sync with nothing
+moved sets no parm and no user data (recorded through node event
+callbacks: `hasUnsavedChanges` is not reliable in hython), an asset added
+upstream gets a row with the pins and Skip kept, a rewired input warns as
+drift, **Add Characters** for an asset off the stage makes the managed
+`th::import_assets` (resolver stood in for with a staged build) and the
+row, an **Instances** edit on it goes to that import, and Manual leaves
+the rows alone. Section 7 keys `kid` (alone on the stage) in the dive's
+Scene Animate, on its base and on a layer, names it on `th::animate`'s
+Characters and a `th::layout_keys` row, raises the stage to two copies and
+syncs: `kid0` has `kid`'s keys channel for channel (`rig_path` renamed),
+`kid` is gone from the rows and both lists, one **Undo** puts keys and
+rows back (and Redo moves them again), a second sync sets nothing, and
+with `kid0` keyed already nothing moves and `kid` is kept beside it. The
+planner itself is `tests/test_rig_stage_sync.py`; the key move over the
+packed folders is `tests/test_animate_rename.py`. It
+then checks `startup.hide_retired_node_types` hides
+`th::import_rig` from TAB while `createNode` still makes it. The rule
+itself is `tests/test_animation_template.py` and
+`tests/test_animatable_stamp.py`; Browse... then Import on every import
+HDA, and Browse Rigs...' rows, are `tests/test_browse_then_import.py`.
 
 ```bash
 HOUDINI_PACKAGE_SKIP=1 HOUDINI_PATH="<repo>;&" PYTHONPATH=<repo>/python \

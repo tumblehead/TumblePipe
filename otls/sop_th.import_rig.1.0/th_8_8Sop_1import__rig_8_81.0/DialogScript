@@ -117,6 +117,15 @@
             range   { 1! 10 }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "names"
+            label   "Names"
+            type    string
+            invisible
+            default { "" }
+            help    "The stage copies the characters are named after (set by th::import_rigs on Follow Stage, gaps such as Roommate0 Roommate2 included); empty: the asset name for one copy, else <asset>0 .. <asset>N-1."
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

@@ -13,8 +13,8 @@ Why this module exists
 entity and then send one shared ``settings`` dict for the whole batch. That
 made a multi-shot submit render every shot over the primary shot's frame
 range — silently, because ``batch_submit`` filled a missing frame key with
-a hardcoded 1001-1100. Playblast never had the bug: ``batch_submit``
-ignores the form for playblast frames and asks config per shot.
+a hardcoded 1001-1100. The playblast's frames (Remy, 2026-11-26) resolve
+the same way: each shot's own range and rolls unless the artist sets them.
 
 So a submission field has three possible sources, in priority order:
 
@@ -245,10 +245,24 @@ FIELDS: tuple[Field, ...] = (
 
     # ── Playblast (shots only) ────────────────────────────
     # The playblast cut mirrors the render cut, so it reads the same
-    # property. Its *frames* are not here at all: batch_submit derives them
-    # per shot from config, which is the behaviour this module generalises.
+    # property.
     Field('pb_department', 'playblast', 'Department',
           prop='submission.render.department', kind='str'),
+    # The frames (Remy, 2026-11-26): the shot's range and rolls, as the
+    # Render's, so left alone a playblast plays the shot's whole range as
+    # it always did; set, a shorter test range, or the render's range
+    # matched exactly (Match Render, :func:`playblast_frames_from_render`).
+    # No Frame list: a movie is one range. The Step plays every Nth frame,
+    # each held until the next, as a stepped render's mp4.
+    Field('pb_first_frame', 'playblast', 'First', prop='frame_start',
+          default=REQUIRED, kind='int'),
+    Field('pb_last_frame', 'playblast', 'Last', prop='frame_end',
+          default=REQUIRED, kind='int'),
+    Field('pb_step', 'playblast', 'Step', prop=None, default=1, kind='int'),
+    Field('pb_pre_roll', 'playblast', 'Pre-roll', prop='roll_start',
+          default=0, kind='int'),
+    Field('pb_post_roll', 'playblast', 'Post-roll', prop='roll_end',
+          default=0, kind='int'),
     Field('pb_pool', 'playblast', 'Pool', prop='farm.default_pool',
           default='general', kind='str'),
     Field('pb_priority', 'playblast', 'Priority', prop='farm.priority',
@@ -858,6 +872,7 @@ def entity_warnings(
         warnings.extend(
             _department_warning(resolved.get('pb_department'), departments)
         )
+        warnings.extend(playblast_warnings(properties, resolved))
 
     if resolved.get('comp') and not resolved.get('render'):
         frames = comp_frames(properties, resolved, rendered)
@@ -914,6 +929,73 @@ def frame_list_note(text: str | None, step: int = 1) -> str:
         f"{frame_ranges.summary(ranges)}: {frame_ranges.NOT_PUBLISHED} "
         "(no daily, no Copy to edit, no Comp); the frames stay on disk to view"
     )
+
+
+#: Match Render's pairs (Remy, 2026-11-26): each Playblast frame field and
+#: the Render field it takes its value from.
+PLAYBLAST_FROM_RENDER = (
+    ('pb_first_frame', 'first_frame'),
+    ('pb_last_frame', 'last_frame'),
+    ('pb_step', 'render_step'),
+    ('pb_pre_roll', 'pre_roll'),
+    ('pb_post_roll', 'post_roll'),
+)
+
+
+def playblast_frames_from_render(render: dict, frame_list_text: str | None = None) -> dict:
+    """What Farm Submit's Match Render sets the Playblast's frames to, so
+    the playblast plays the frames the render renders.
+
+    ``render`` holds the Render's form values by key (:data:`PLAYBLAST_FROM_RENDER`'s
+    second column), :data:`MIXED` for one left per entity; the playblast
+    field then goes back to per entity too, which reads the same shot
+    property, so it is the same frame on every shot. ``frame_list_text`` is
+    the Render's Frame list: with ranges typed, the render renders inside
+    them whatever its First, Last and rolls, so the playblast plays from the
+    first range's first frame to the last one's last (a movie is one range:
+    the frames between several ranges play too), rolls 0. A list that cannot
+    be read is ignored (the render refuses it on its own).
+
+    Returns ``{playblast key: value or MIXED}``, every playblast frame key.
+    """
+    out = {pb: render.get(key, MIXED) for pb, key in PLAYBLAST_FROM_RENDER}
+    try:
+        ranges = frame_ranges.normalise(frame_ranges.parse(frame_list_text))
+    except frame_ranges.FrameListError:
+        ranges = ()
+    if ranges:
+        first, last = frame_ranges.span(ranges)
+        out.update(pb_first_frame=first, pb_last_frame=last, pb_pre_roll=0, pb_post_roll=0)
+    return out
+
+
+def playblast_warnings(properties: dict, resolved: dict) -> list[str]:
+    """The Warnings-column lines of a row's playblast frames: none set and
+    none configured; frames outside the shot's (rolls included), which
+    play whatever the scene holds there; and a Step above 1, every Nth
+    frame held until the next."""
+    if not resolved.get('playblast'):
+        return []
+    frames = submission.playblast_frames(resolved)
+    if frames is None:
+        return ["no frame range configured to playblast"]
+    first, last, step = frames
+    if first > last:
+        return []   # refused (submission.playblast_problems)
+    warnings = []
+    shot = shot_range(properties)
+    if shot is not None and (first < shot[0] or last > shot[1]):
+        warnings.append(
+            f"the playblast frames {first}-{last} reach outside the shot's "
+            f"{shot[0]}-{shot[1]}"
+        )
+    if step > 1:
+        count = frame_ranges.frame_count(((first, last),), step)
+        warnings.append(
+            f"playblast every {ordinal(step)} frame ({count} frame"
+            f"{'s' if count != 1 else ''}), each held until the next"
+        )
+    return warnings
 
 
 def repair_warnings(resolved: dict) -> list[str]:

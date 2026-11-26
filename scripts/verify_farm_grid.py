@@ -106,7 +106,7 @@ def main() -> int:
     from tumblepipe.asset_browser import submit_jobs_dialog as mod
     from tumblepipe.farm.submit import plan as submit_plan
     from tumblepipe.farm.pipelines import preview as _preview
-    from tumblepipe.farm.specs.playblast import DEFAULT_LOOK
+    from tumblepipe.farm.specs.playblast import DEFAULT_LOOK, collapse_light
     from tumblepipe.pipe.paths import get_latest_staged_file_path
 
     results: list[bool] = []
@@ -638,7 +638,7 @@ def main() -> int:
             try:
                 name = _preview.collapse_playblast_input(
                     staged, renderable[-1], Path(tmp), paths,
-                    light=DEFAULT_LOOK["light"],
+                    light=collapse_light(DEFAULT_LOOK),
                 )
                 text = (Path(tmp) / name).read_text(encoding="utf-8")
                 ok = "subLayers" in text and _preview.PLAYBLAST_INPUT_NAME == name

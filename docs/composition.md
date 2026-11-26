@@ -602,7 +602,7 @@ pipeline `customData` (`prim_metadata.ANIMATABLE_KEY`), next to `uri`,
 animated. `import_shot`, `import_asset`, `import_assets` and
 `import_layer` (which overwrites whatever a layer's export carried) write
 it when they import; copies inherit it from their prototype.
-[`th::import_rigs`' **Discover**](nodes/assets.md#thimport_rigs-sop)
+[`th::import_rigs`' **Add Rigs from Scene**](nodes/assets.md#thimport_rigs-sop)
 reads it to find a shot's rigs. A prim imported before the stamp existed
 carries none until its import node imports again, and readers judge it by
 `copies_are_animated` meanwhile. The stamp stays in the USD: the export's
@@ -864,8 +864,10 @@ given on Houdini's command line (a launch from TumbleTrove Desktop) opened
 already marked changed and the first switch asked to save changes nobody
 made. When anything moved (a new publish, a config edit, a parameter you
 changed), every import node runs, as before: a node downstream of the moved
-one imports what it brings in. The Asset Browser's **Update** always runs
-them all.
+one imports what it brings in. A comp's `th::import_render` nodes are the
+exception: no import reads what they bring in, so while only render imports
+moved (a shot's new render, an import that failed last time), only those
+run (after 1.133.0). The Asset Browser's **Update** always runs them all.
 
 The refreshed node types are `import_shot`, `import_assets`, `import_asset`,
 `import_layer`, `import_rigs`, `import_rig` and the SOP `import_model`. An

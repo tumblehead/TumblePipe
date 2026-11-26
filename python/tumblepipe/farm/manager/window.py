@@ -1844,7 +1844,8 @@ class ManagerWindow(QWidget):
                 f'they show as they land\n{target.folder}'
             )
         elif target.enabled:
-            action.setToolTip(f'Show the frames of {target.row.name} in Cinedex\n{target.folder}')
+            what = 'movie' if frames_preview.is_movie_file(target.folder) else 'frames'
+            action.setToolTip(f'Show the {what} of {target.row.name} in Cinedex\n{target.folder}')
         else:
             action.setToolTip(target.reason)
         return action

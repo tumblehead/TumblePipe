@@ -447,6 +447,17 @@ def make_portable(layer_path: Path) -> None:
         project_roots=project_storage_roots(),
         skip_roots=cache_roots,
     )
+    # A clipped layer's clips (#108) carry its asset-valued samples
+    from tumblepipe.pipe.usd.stitch import value_clip_files
+    for clip in value_clip_files(layer_path):
+        if clip.is_file():
+            clipped = localize_external_assets(
+                clip,
+                project_roots=project_storage_roots(),
+                skip_roots=cache_roots,
+                folder=Path(layer_path).parent,
+            )
+            assets.missing_assets.extend(clipped.missing_assets)
     for missing in arcs.missing_assets + assets.missing_assets:
         logger.warning("Exported layer points at a missing file: %s", missing)
 

@@ -234,8 +234,6 @@ class ImportAssets(ImportOptions, AssetRows):
             for index in new_rows:
                 self._update_labels(index)
         message = ep.rows_added_text(len(added), len(skipped))
-        if added:
-            message += ' Press Import to load them.'
         return f"{self.path().rsplit('/', 1)[-1]}: {message}"
 
     def _initialize(self):
@@ -249,8 +247,13 @@ class ImportAssets(ImportOptions, AssetRows):
         # refresh (it dirties every composed stage in the session); defer
         # them so a multi-asset rebuild costs one refresh at the end.
         from tumblepipe import resolver
+        from tumblepipe.pipe.houdini import animate_sync
         with resolver.deferred_refresh(), self._rows_read_once():
-            return self._execute()
+            result = self._execute()
+        # The resolver refresh has run: each th::import_rigs on Follow
+        # Stage in a th::animate below follows the new stage.
+        animate_sync.sync_downstream(self.native())
+        return result
 
     def _execute(self):
 
@@ -437,9 +440,10 @@ def execute(kwargs):
 
 @button('Import Assets')
 def browse(kwargs):
-    """The top Browse... button: pick several assets in the picker and add
-    a row for each. Assets already in a row are skipped; the status line
-    says how many were added and skipped."""
+    """The top Browse... button: pick several assets in the picker, add a
+    row for each, then Import (as the Import button does). Assets already
+    in a row are skipped; the status line says how many were added and
+    skipped. Cancel, or Select with nothing picked, changes nothing."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
     node = ImportAssets(kwargs['node'])
@@ -453,15 +457,20 @@ def browse(kwargs):
     )
     if not dialog.exec_():
         return
+    picked = dialog.get_selected_uris()
+    if not picked:
+        return
     # One undo step for all the rows added.
     with hou.undos.group(f'Add assets to {node.path()}'):
-        message = node.add_picked_assets(dialog.get_selected_uris())
+        message = node.add_picked_assets(picked)
     hou.ui.setStatusMessage(message, severity=hou.severityType.Message)
+    execute(kwargs)
 
 
 @button('Import Assets')
 def select(kwargs):
-    """A row's Browse... button: pick that row's asset."""
+    """A row's Browse... button: pick that row's asset, then Import (as
+    the Import button does). Cancel changes nothing."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
     index = kwargs['parm'].multiParmInstanceIndices()[0]
@@ -474,11 +483,13 @@ def select(kwargs):
         title="Select Asset",
         parent=hou.qt.mainWindow()
     )
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm(f'entity{index}').set(selected_uri)
-            node._update_labels(index)
+    if not dialog.exec_():
+        return
+    selected_uri = dialog.get_selected_uri()
+    if not selected_uri:
+        return
+    node.parm(f'entity{index}').set(selected_uri)
+    execute(kwargs)
 
 def output_modified_prims(raw_node) -> str:
     """Return the imported asset prim paths, space-separated.

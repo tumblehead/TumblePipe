@@ -122,11 +122,30 @@ def _shown(names: list[str]) -> str:
     return shown
 
 
-def copies_message(asset_uri: Uri, instances: int, on_stage: list[str]) -> str:
+def parse_names(raw: str) -> list[str]:
+    """A ``names`` parm as character names (space separated, duplicates
+    dropped, order kept); [] for an empty one."""
+    return list(dict.fromkeys(raw.split()))
+
+
+def characters(asset_uri: Uri, instances: int, names=()) -> list[str]:
+    """The characters a rig import makes: ``names`` when it has them (the
+    stage copies th::import_rigs on Follow Stage hands it, gaps such as
+    Roommate0, Roommate2 included), else ``instance_names``."""
+    names = list(names)
+    if names:
+        return names
+    if instances <= 0:
+        return []
+    return instance_names(asset_uri, instances)
+
+
+def copies_message(asset_uri: Uri, instances: int, on_stage: list[str],
+                   names=()) -> str:
     """The warning when a rig import of ``instances`` copies of
-    ``asset_uri`` does not make the characters the shot stage holds
-    (``on_stage``, from ``stage_copies``); '' when it does, or when it
-    imports none.
+    ``asset_uri`` (named ``names`` when given, see ``characters``) does not
+    make the characters the shot stage holds (``on_stage``, from
+    ``stage_copies``); '' when it does, or when it imports none.
 
     The rig's characters are placed, animated and published onto the stage
     prims of the same name. One the stage lacks lands as a new prim at the
@@ -134,9 +153,9 @@ def copies_message(asset_uri: Uri, instances: int, on_stage: list[str]) -> str:
     in its rest pose. Both happened silently when Instances was set by hand
     on th::import_rigs instead of on the shot's scene (David).
     """
-    if instances <= 0:
+    if instances <= 0 and not names:
         return ''
-    made = instance_names(asset_uri, instances)
+    made = characters(asset_uri, instances, names)
     missing = [name for name in made if name not in on_stage]
     extra = [name for name in on_stage if name not in made]
     if not missing and not extra:
@@ -168,12 +187,12 @@ def copies_message(asset_uri: Uri, instances: int, on_stage: list[str]) -> str:
             f'Press Set Scene Copies on th::import_rigs to set the shot\'s '
             f'scene to {len(made)} {"copy" if len(made) == 1 else "copies"} '
             f'of {asset_name}, or set its instances in the Entity Editor, '
-            'then press Discover on th::import_rigs.'
+            'then press Add Rigs from Scene on th::import_rigs.'
         )
     else:
         parts.append(
             f'Set the instances of {asset_name} on the shot\'s scene in the '
-            'Entity Editor, then press Discover on th::import_rigs.'
+            'Entity Editor, then press Add Rigs from Scene on th::import_rigs.'
         )
     return ' '.join(parts)
 
@@ -196,11 +215,21 @@ def stage_children(stage, asset_uri: Uri) -> list[tuple]:
     return children
 
 
-def copies_warning(stage, asset_uri: Uri, instances: int) -> str:
+def copies_warning(stage, asset_uri: Uri, instances: int, names=()) -> str:
     """``copies_message`` for a rig import against shot stage ``stage``."""
     return copies_message(
-        asset_uri, instances, stage_copies(asset_uri, stage_children(stage, asset_uri))
+        asset_uri, instances,
+        stage_copies(asset_uri, stage_children(stage, asset_uri)), names,
     )
+
+
+def node_names(native) -> list[str]:
+    """The ``names`` parm of a th::import_rig node (none on an HDA from
+    before it existed)."""
+    parm_of = getattr(native, 'parm', None)
+    parm = parm_of('names') if parm_of is not None else None
+    value = parm.eval() if parm is not None else None
+    return parse_names(value) if isinstance(value, str) else []
 
 
 def add_warning(node, message: str) -> None:
@@ -393,7 +422,8 @@ def place_characters(sop_node):
         return
 
     instances = import_node.parm('instances').eval()
-    names = set(instance_names(asset_uri, instances))
+    given = node_names(import_node)
+    names = set(characters(asset_uri, instances, given))
     prim_parent_path = '/'.join(asset_uri.segments[1:-1])
 
     keyed = layout_keys_rows.keyed_placement(sop_node)
@@ -402,7 +432,7 @@ def place_characters(sop_node):
         return
     # Characters the stage has no prim for, or stage copies no character
     # is named for: a warning, the cook goes on.
-    add_warning(sop_node, copies_warning(stage, asset_uri, instances))
+    add_warning(sop_node, copies_warning(stage, asset_uri, instances, given))
     # Once per cook: the start frame reads the workfile's context and the
     # shot's range from the project drive (12 calls, about 1 s, per edit
     # for one import of 12 pawns).
@@ -474,6 +504,34 @@ class ImportRig(EntityNode):
     
     def set_instances(self, instances):
         self.parm('instances').set(instances)
+
+    def get_names(self) -> list[str]:
+        """The stage copy names the characters take (hidden ``names``);
+        [] when they follow Instances (``instance_names``)."""
+        return node_names(self.native())
+
+    def set_names(self, names) -> None:
+        """Name the characters after ``names`` (the stage copies, gaps
+        included) instead of ``instance_names``; [] goes back to those.
+        Instances becomes their count."""
+        names = list(dict.fromkeys(names))
+        parm = self.parm('names')
+        if parm is None:
+            if names and names != instance_names(self.require_entity_uri(), len(names)):
+                raise self._error(
+                    'this th::import_rig has no names parm (an old HDA): it '
+                    'cannot name characters after the stage copies')
+        elif parm.eval() != ' '.join(names):
+            parm.set(' '.join(names))
+        if names:
+            self.set_instances(len(names))
+
+    def get_characters(self) -> list[str]:
+        """The characters this import makes (``characters``)."""
+        asset_uri = self.get_entity_uri()
+        if asset_uri is None:
+            return []
+        return characters(asset_uri, self.get_instances(), self.get_names())
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
@@ -550,11 +608,13 @@ class ImportRig(EntityNode):
         source_node = dive_node.indirectInputs()[1]
         prim_base_path = '/'.join(asset_uri.segments[1:])  # e.g., "char/hero"
         prim_parent_path = '/'.join(asset_uri.segments[1:-1])  # e.g., "char"
-        for instance_name in instance_names(asset_uri, instances):
+        base_name = asset_uri.segments[-1]
+        for instance_name in characters(asset_uri, instances, self.get_names()):
             anchor_node = source_node
 
-            # Rename the packed primitives if necessary
-            if instances > 1:
+            # Rename the packed primitives when the character is not the
+            # asset's own name (a copy: Roommate0, or Roommate2 alone)
+            if instance_name != base_name:
                 rename_node = rename_packed.create(dive_node, f'{uri_name}_{instance_name}_rename')
                 rename_node.set_from_path(f'/{prim_base_path}/*')
                 rename_node.set_to_path(f'/{prim_parent_path}/{instance_name}/*')
@@ -600,7 +660,8 @@ class ImportRig(EntityNode):
             asset_uri = self.get_entity_uri()
             if stage is None or asset_uri is None:
                 return ''
-            return copies_warning(stage, asset_uri, self.get_instances())
+            return copies_warning(
+                stage, asset_uri, self.get_instances(), self.get_names())
         except Exception:
             return ''
 
@@ -632,10 +693,7 @@ def set_scene_copies(kwargs):
 
 @button('Import Rig')
 def select(kwargs):
-    """Entity button: pick the asset, then import its rig."""
-    node = ImportRig(kwargs['node'])
-    if node.pick_entity('Select Asset'):
-        try:
-            announce_warning(node.execute())
-        finally:
-            animate_ghost.refresh_ghost(kwargs['node'])
+    """Entity button: pick the asset, then Import its rig (as the Import
+    button does). Cancel changes nothing."""
+    if ImportRig(kwargs['node']).pick_entity('Select Asset'):
+        execute(kwargs)

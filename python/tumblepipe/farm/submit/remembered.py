@@ -5,8 +5,9 @@ own values again, so a renderer or sample count set for the last submission
 had to be set again. The window now keeps, per project and tab:
 
 * the settings the artist **pinned** (set for the whole submission), except
-  the frame ranges (the Render's and the Comp's) and the Render's Up to and
-  Camera, which belong to the shots they were picked for;
+  the frame ranges (the Render's, the Playblast's and the Comp's) and the
+  Render's Up to and Camera, which belong to the shots they were picked
+  for;
 * the Render section's batch choices (Preview / Full range, Standalone,
   Copy to edit) and the Comp section's Preview frames and Copy to edit;
 * which columns the artist collapsed;
@@ -32,6 +33,7 @@ from typing import Any, Callable, Mapping
 # and a remembered camera would render the next shot through the last one's.
 NOT_REMEMBERED = frozenset({
     'first_frame', 'last_frame', 'comp_first_frame', 'comp_last_frame',
+    'pb_first_frame', 'pb_last_frame',
     'render_department', 'render_camera',
 })
 

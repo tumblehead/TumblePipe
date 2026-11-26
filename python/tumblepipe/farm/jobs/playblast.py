@@ -34,7 +34,11 @@ def build(config, paths, staging_path):
         paths = paths
     )
     # One task for the whole range, so the one worker sees every frame and
-    # can encode the mp4.
-    run_once(job, config['first_frame'], config['last_frame'])
+    # can encode the mp4; its frame list the frames it renders, on its step.
+    # Its limit is the whole playblast's: 45 minutes plus 30 s a frame, at
+    # most 12 hours (run_once).
+    run_once(job, config['first_frame'], config['last_frame'],
+        minutes_per_frame = 0.5, most_minutes = 12 * 60,
+        step_size = config.get('step_size', 1))
     job.output_paths.extend(map(Path, config['output_paths']))
     return job

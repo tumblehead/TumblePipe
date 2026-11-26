@@ -29,6 +29,18 @@ RETIRED_NODE_TYPES = (
     ("Lop", "th::create_model::1.0"),
 )
 
+#: Node types the pipeline still builds and uses, hidden from the TAB menu
+#: (and the catalog's Nodes section) because artists want another one.
+#: th::import_rig is the one-rig building block th::import_rigs makes a
+#: chain of; artists add rigs with th::import_rigs (Ema, Magnus 2026-11).
+#: Code still creates it by name, and placed nodes load and work.
+UTILITY_NODE_TYPES = (
+    ("Sop", "th::import_rig::1.0"),
+)
+
+#: Every node type hidden from the TAB menu at startup.
+TAB_HIDDEN_NODE_TYPES = RETIRED_NODE_TYPES + UTILITY_NODE_TYPES
+
 
 def bootstrap() -> None:
     """Register everything TumblePipe adds to a Houdini session.
@@ -92,7 +104,7 @@ def _register_tumbletrove() -> None:
     from tumblepipe.pipe.houdini import viewer_camera_guard
 
     # Before the package: its catalog lists only the TAB-visible types.
-    _guarded("retired node types", hide_retired_node_types)
+    _guarded("hidden node types", hide_retired_node_types)
     _guarded("package registration", register_package)
     _guarded("scene-load import refresh", load_hook.register)
     _guarded("viewer camera guard", viewer_camera_guard.register)
@@ -131,12 +143,13 @@ def _start_shot_slate() -> None:
 
 
 def hide_retired_node_types() -> None:
-    """Hide every :data:`RETIRED_NODE_TYPES` entry from the TAB menu. A type
-    that is not installed is skipped."""
+    """Hide every :data:`TAB_HIDDEN_NODE_TYPES` entry (the retired types
+    and the utility ones) from the TAB menu. A type that is not installed
+    is skipped."""
     import hou
 
     categories = hou.nodeTypeCategories()
-    for category_name, type_name in RETIRED_NODE_TYPES:
+    for category_name, type_name in TAB_HIDDEN_NODE_TYPES:
         category = categories.get(category_name)
         node_type = category.nodeType(type_name) if category else None
         if node_type is not None:

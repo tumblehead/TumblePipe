@@ -216,6 +216,11 @@ class Job:
         self.step_size = None
         self.chunk_size = None
         self.max_frame_time = None
+        # Deadline's EnableFrameTimeouts: the task limit (max_frame_time) is
+        # multiplied by the frames in each task. A job that runs its whole
+        # range as one task (farm.deadline.run_once) turns it off, so its
+        # limit caps the task instead of growing with the shot's length.
+        self.frame_timeouts = True
         self.env = dict()
         self.paths = dict()
         self.output_paths = list()
@@ -255,7 +260,7 @@ class Job:
             'Plugin': PLUGIN,
             'Frames': self._frames(),
             'ChunkSize': str(self.chunk_size),
-            'EnableFrameTimeouts': 'true',
+            'EnableFrameTimeouts': 'true' if self.frame_timeouts else 'false',
             'TaskTimeoutSeconds': str(max_frame_time),
         } | {
             f'OutputDirectory{index}': path_str(output_path.parent)

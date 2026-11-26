@@ -301,10 +301,10 @@ def execute(kwargs):
 
 @button('Import Asset')
 def select(kwargs):
-    """Entity button: pick the asset, then import it."""
-    node = ImportAsset(kwargs['node'])
-    if node.pick_entity('Select Asset'):
-        node.execute()
+    """Entity button: pick the asset, then Import (as the Import button
+    does). Cancel changes nothing."""
+    if ImportAsset(kwargs['node']).pick_entity('Select Asset'):
+        execute(kwargs)
 
 def output_modified_prims(raw_node) -> str:
     """Return the prim path this HDA wrote, for the output's modifiedprims.

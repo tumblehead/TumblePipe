@@ -169,11 +169,14 @@ def task_spans(frames: list[int], chunk_size: int) -> list[list[int]]:
 def task_timeout(limit_seconds, frames: list[int], chunk_size: int, per_frame: bool = True) -> int:
     """The runner's time limit for each task, in seconds (0: none).
 
-    Every job TumblePipe submits to Deadline sets ``EnableFrameTimeouts``:
-    Deadline multiplies the task timeout by the frames in the task. The
-    runner keeps one limit per job, so it takes the largest task's, and a
-    task here gets at least the time it gets on the farm (a 10-frame render
-    chunk with a 45 minute limit ran 45 minutes here, 7.5 hours there).
+    With ``EnableFrameTimeouts`` (``per_frame``: every batched job
+    TumblePipe submits) Deadline multiplies the task timeout by the frames
+    in the task. The runner keeps one limit per job, so it takes the
+    largest task's, and a task here gets at least the time it gets on the
+    farm (a 10-frame render chunk with a 45 minute limit ran 45 minutes
+    here, 7.5 hours there). A job run as one task
+    (``farm.deadline.run_once``) has frame timeouts off: its limit is the
+    whole task's.
     """
     limit = int(limit_seconds or 0)
     if limit <= 0:

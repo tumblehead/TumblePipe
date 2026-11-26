@@ -56,7 +56,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::cache` | SOP | Versioned `.bgeo.sc` cache in the workfile's cache folder |
 | `th::import_asset` | SOP | The LOP `import_asset` wrapped for SOPs; optionally unpacked to polygons |
 | `th::import_model` | SOP | Pull a published model's geometry into SOPs, one USD variant at a time |
-| `th::import_rig` | SOP | Load one published rig |
+| `th::import_rig` | SOP | Load one published rig; hidden from TAB, add rigs with `th::import_rigs` |
 | `th::import_rigs` | SOP | Load several rigs, one row each, with per-row version pins |
 | `th::export_rig` | SOP | Publish the rig department |
 | `th::playblast` | SOP | Playblast a SOP/APEX scene with TumbleView, through the pipeline's playblast folders |
@@ -234,9 +234,18 @@ A `th::import_shot` placed before 1.104.0 shows **Browse...** at the bottom,
 under Actions, until its next Import (or the import refresh on scene open)
 puts it back on the Entity row.
 
+On a node with an **Import** button (`th::import_asset`, `th::import_assets`,
+`th::import_layer`, `th::import_shot`, `th::import_model`, `th::import_rig`,
+`th::import_rigs`, `th::import_lop_camera`, `th::import_scene`), picking in
+the window imports right away, through the same code as the **Import**
+button (its errors included): one click, not a pick and then a hunt for
+Import. **Cancel** changes nothing and imports nothing.
+
 `th::import_assets` (and `th::import_rigs`) have a **Browse...** per row, which
 re-picks that row; `th::import_assets` also has one above the rows that picks
-several assets at once: see [`th::import_assets`](import-and-export.md#thimport_assets-lop).
+several assets at once (see [`th::import_assets`](import-and-export.md#thimport_assets-lop)),
+and `th::import_rigs` a **Browse Rigs...** that does the same for rigs (see
+[`th::import_rigs`](assets.md#thimport_rigs-sop)).
 
 ### `effective_primpath`
 

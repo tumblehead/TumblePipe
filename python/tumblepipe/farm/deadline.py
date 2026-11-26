@@ -7,6 +7,7 @@ Job and attaches the hpm.toml the HPM plugin installs on a worker cache miss.
 The generic `submit()` only writes `job.manifest` into the shared job dir and
 hands the plugin its path.
 """
+import math
 import os
 import re
 from pathlib import Path
@@ -371,17 +372,59 @@ def farm_job(
     return job
 
 
-def run_once(job: Job, first_frame: int, last_frame: int) -> None:
+def once_minutes(
+    base_minutes: int | None,
+    frame_count: int,
+    minutes_per_frame: float = 0,
+    most_minutes: int | None = None,
+    ) -> int | None:
+    """A one-task job's whole time limit, in minutes (None: no limit).
+
+    ``base_minutes`` (the job's ``max_minutes``) plus ``minutes_per_frame``
+    for each of the task's ``frame_count`` frames, rounded up, and at most
+    ``most_minutes``."""
+    if not base_minutes:
+        return base_minutes
+    total = base_minutes + minutes_per_frame * max(0, frame_count)
+    if most_minutes is not None:
+        total = min(total, most_minutes)
+    return max(1, math.ceil(total))
+
+
+def run_once(
+    job: Job,
+    first_frame: int,
+    last_frame: int,
+    *,
+    minutes_per_frame: float = 0,
+    most_minutes: int | None = None,
+    step_size: int = 1,
+    ) -> None:
     """Schedule ``job`` as one Deadline task spanning ``first..last``.
 
     For a worker that processes its whole range itself (an encode, a stage,
     a publish): a second chunk would be a second worker redoing the whole
-    job. The span, not the stepped frame count, is the chunk.
+    job. With ``step_size`` above 1 (a stepped playblast), the job's frame
+    list is the frames it makes (``first-lastxstep``), still one task, so
+    the Farm Manager's Preview in Cinedex waits for those frames only
+    (``farm.manager.frames_preview.expected_frames``).
+
+    The task's time limit is the whole task's, with frame timeouts off:
+    Deadline's ``EnableFrameTimeouts`` multiplies the limit by the frames in
+    the task, and here every frame of the shot is one task, so a 776-frame
+    publish with a 15-minute limit was only killed after 194 hours. The
+    limit is the job's ``max_minutes`` plus ``minutes_per_frame`` per frame
+    of the span, at most ``most_minutes`` (:func:`once_minutes`).
     """
+    step_size = max(1, step_size)
     job.start_frame = first_frame
     job.end_frame = last_frame
-    job.step_size = 1
-    job.chunk_size = last_frame - first_frame + 1
+    job.step_size = step_size
+    job.chunk_size = len(range(first_frame, last_frame + 1, step_size))
+    job.frame_timeouts = False
+    job.max_frame_time = once_minutes(
+        job.max_frame_time, job.chunk_size, minutes_per_frame, most_minutes,
+    )
 
 
 def run_batched(

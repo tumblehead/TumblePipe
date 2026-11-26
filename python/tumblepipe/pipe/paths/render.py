@@ -6,6 +6,10 @@ model (``get_render``, ``get_render_context``) walks it back. Playblasts and
 dailies live in ``paths.review``.
 """
 
+import fnmatch
+import os
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterable, Optional
 from pathlib import Path
@@ -25,6 +29,60 @@ from tumblepipe.pipe.paths.version import (
 )
 
 ###############################################################################
+# Render reads cache
+###############################################################################
+# Per-thread cache, live only inside ``cached_render_reads()``.
+_read_scope = threading.local()
+
+@contextmanager
+def cached_render_reads():
+    """Within this block, each render version's ``context.json``, each AOV
+    folder's file listing and each version's completeness are read from
+    disk once per thread.
+
+    For a batch that reads renders and writes none: the scene import
+    refresh resolves every render import of a Multi comp, and one resolve
+    asked the same version's ``context.json`` and AOV folders 6-10 times
+    (listing which versions are complete, then the newest, then the check
+    renders, then each AOV's frame range). On a share every read is a round
+    trip: 25 imports cost 1,100 stat() and 2,200 folder listings (22 s,
+    2026-11-26). Re-entrant; the cache is dropped when the outermost block
+    exits. Frames written inside the block are not seen by a later read in
+    it.
+    """
+    if getattr(_read_scope, 'cache', None) is not None:
+        yield
+        return
+    _read_scope.cache = {}
+    try:
+        yield
+    finally:
+        _read_scope.cache = None
+
+def _cached(key, read):
+    cache = getattr(_read_scope, 'cache', None)
+    if cache is None: return read()
+    if key not in cache:
+        cache[key] = read()
+    return cache[key]
+
+def _read_context(context_path: Path) -> Optional[dict]:
+    """A version's ``context.json`` as read, None when it has none."""
+    def read():
+        if not context_path.exists(): return None
+        return load_json(context_path)
+    return _cached(('context', str(context_path)), read)
+
+def _folder_names(folder: Path) -> tuple[str, ...]:
+    """The names in ``folder``; () when it is missing."""
+    def read():
+        try:
+            return tuple(os.listdir(folder))
+        except (FileNotFoundError, NotADirectoryError):
+            return ()
+    return _cached(('names', str(folder)), read)
+
+###############################################################################
 # Render model
 ###############################################################################
 def _load_frame_range(context_path: Path) -> Optional[BlockRange]:
@@ -34,8 +92,8 @@ def _load_frame_range(context_path: Path) -> Optional[BlockRange]:
     it submits; a version directory without one was not made by a render
     submission and has no range to check frames against.
     """
-    if not context_path.exists(): return None
-    context = load_json(context_path)
+    context = _read_context(context_path)
+    if context is None: return None
     return BlockRange(
         context['first_frame'],
         context['last_frame'],
@@ -48,8 +106,9 @@ def is_published(context_path: Path) -> bool:
     ``farm.pipelines.post_render.Shot.check_render``), which records
     ``published: false``. Its frames are complete on its step and stay on
     disk to view, but have gaps a comp, the edit or a daily cannot use."""
-    if not context_path.exists(): return True
-    return load_json(context_path).get('published', True) is not False
+    context = _read_context(context_path)
+    if context is None: return True
+    return context.get('published', True) is not False
 
 def check_step(context: dict) -> Optional[int]:
     """The step of a check render whose ``context.json`` reads ``context``
@@ -75,8 +134,9 @@ class AOV:
     def is_complete(self, expected_frame_range: BlockRange) -> bool:
         frame_path = self.get_aov_frame_path('*')
         actual_frame_indices = sorted(
-            int(path.stem.split('.')[-1])
-            for path in frame_path.parent.glob(frame_path.name)
+            int(Path(name).stem.split('.')[-1])
+            for name in _folder_names(frame_path.parent)
+            if fnmatch.fnmatch(name, frame_path.name)
         )
         return actual_frame_indices == list(expected_frame_range)
 
@@ -107,6 +167,12 @@ class Layer:
         """Every frame of ``expected_frame_range`` is on disk; with none,
         every frame the version records, and only for a published version
         (a check render is never a complete render of the shot)."""
+        if expected_frame_range is None:
+            return _cached(('complete', str(self.path)),
+                           lambda: self._is_complete(None))
+        return self._is_complete(expected_frame_range)
+
+    def _is_complete(self, expected_frame_range: Optional[BlockRange]) -> bool:
         frame_range = expected_frame_range
         if frame_range is None:
             if not self.is_published(): return False

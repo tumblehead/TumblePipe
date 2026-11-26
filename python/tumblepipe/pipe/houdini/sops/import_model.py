@@ -54,11 +54,11 @@ class ImportModel(ns.Node):
     def open_location(self):
         self.inner().open_location()
 
-    def pick_entity(self):
-        """Entity button: pick, then import. The inner node's 'entity' is a
-        channel reference to the outer parm, so its picker sets both."""
-        if self.inner().pick_entity('Select Asset', contexts=('assets',)):
-            self.execute()
+    def pick_entity(self) -> bool:
+        """The Entity button's picker; True when an asset was picked. The
+        inner node's 'entity' is a channel reference to the outer parm, so
+        its picker sets both."""
+        return self.inner().pick_entity('Select Asset', contexts=('assets',))
 
     def variant_prim_path(self) -> str:
         """The prim the inner Set Variant LOP picks the model variant on:
@@ -99,4 +99,7 @@ def open_location(kwargs):
 
 @button('Import Model')
 def select(kwargs):
-    ImportModel(kwargs['node']).pick_entity()
+    """Entity button: pick the asset, then Import (as the Import button
+    does). Cancel changes nothing."""
+    if ImportModel(kwargs['node']).pick_entity():
+        execute(kwargs)

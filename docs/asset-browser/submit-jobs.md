@@ -69,7 +69,7 @@ you can go **Back to grid** and submit more.
 Closing the dialog keeps, per project and tab, for the next time it opens:
 
 - the settings you **pinned** (set for the whole submission), except
-  **Frames** (the Render's and the Comp's) and the Render's **Up to** and
+  **Frames** (the Render's, the Playblast's and the Comp's) and the Render's **Up to** and
   **Camera**, which belong to the shots they were picked for (a remembered
   cut left lighting out of the next shot's render);
 - the Render section's **Range**, **Standalone** and **Copy to edit** choices,
@@ -470,6 +470,9 @@ worker could take from the same pools.
 | Field | Per-entity source | Default when unset |
 |---|---|---|
 | **Up to** | `submission.render.department` | last renderable department not turned off on the shot (the whole shot) |
+| **Frames** (first → last) | `frame_start` / `frame_end` | the shot's own range |
+| **Step** (beside **Frames**) | — | 1 |
+| **Pre / Post roll** | `roll_start` / `roll_end` | the shot's own rolls |
 | **Resolution** (W × H) | `playblast.res_x` / `playblast.res_y` | the shot's render resolution (`render.resolution`), else 1280 × 720 |
 | **Renderer** | `playblast.renderer` | `viewport` |
 | **Shading** | `playblast.shading` | `lit` |
@@ -495,10 +498,40 @@ box read as checked, so two submissions that looked the same rendered
 differently.
 
 **Up to** playblasts every department up to and including this one, in
-pipeline order — the same cut the render uses. There is no frame or channel
-field: a playblast always renders the shot's `default` staged stage over the
-shot's configured range (rolls included), at the shot's fps. What it produces
-is described in [Compositing → Playblast](../compositing.md#playblast).
+pipeline order — the same cut the render uses. There is no channel field: a
+playblast always renders the shot's `default` staged stage, at the shot's
+fps. What it produces is described in
+[Compositing → Playblast](../compositing.md#playblast).
+
+**Frames**, **Step** and **Pre / Post roll** (Remy, 2026-11-26) are the
+Render's frame fields, read the same way: left alone, each shot plays its
+own range with its rolls, every frame, as a farm playblast always did. Set,
+they apply to every ticked shot: a shorter range to try something out, or
+the render's range. The playblast plays `first - pre … last + post`; a
+**Step** above 1 renders every Nth frame from the first and the movie holds
+each one until the next, as a [stepped render](#stepped-renders)'s mp4 does
+(the Warnings column says `playblast every Nth frame (<n> frames), each held
+until the next`). There is no **Frame list**: a movie plays one range.
+
+**Match Render** (beside the rolls) sets the playblast's frames to the
+Render section's, so the playblast shows the frames the render renders: a
+Render field you set is copied and pinned, one left `⟨per entity⟩` puts the
+playblast's back to `⟨per entity⟩` too, which reads the same shot setting.
+With a **Frame list** the playblast plays from its first frame to its last
+with rolls 0 (the render renders the listed frames whatever its rolls); with
+several ranges the frames between them play too. It copies once: change the
+Render afterwards and press it again.
+
+Frames that end before they start, or start at frame 0 or before once the
+pre-roll is on, **block** the row (`the playblast frames <a>-<b> end before
+they start`, `the playblast starts at frame <n> with its pre-roll: …`).
+Frames past the shot's own (rolls included) only warn (`the playblast
+frames <a>-<b> reach outside the shot's <c>-<d>`): they play whatever the
+scene holds there. The Farm Manager's **Preview in Cinedex** of a stepped
+playblast waits for the frames it renders only. **Step** and the rolls are
+remembered for the next opening once set, **Frames** are not (they are the
+shots' own). Up to TumblePipe 1.133 a farm playblast always played the
+shot's whole range.
 
 **Renderer** picks what draws the frames: `viewport` is the viewport's look
 (display colours and textures, shaded as **Shading** says) from

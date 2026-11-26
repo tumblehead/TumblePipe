@@ -364,7 +364,7 @@ Source: [`otls/cop_th.import_scene.1.0`](../../otls/cop_th.import_scene.1.0/th_8
 
 | Label | Default | What it does |
 |---|---|---|
-| Shot | `from_context` | Shots only |
+| Shot | `from_context` | Shots only (*Select Shot*; picking one imports, as **Import** does) |
 | Channel, Department, Version | `default`, `from_context`, `latest` | As on `import_shot` |
 | Reads | | The staged version the inner import loaded |
 | Geometry › Primitives | `/*` | The prims imported; cameras and lights add nothing |
@@ -392,7 +392,7 @@ Source: [`otls/cop_th.import_lop_camera.1.0`](../../otls/cop_th.import_lop_camer
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | `from_context` | Shots only (*Select Shot*); `from_context` in an asset workfile resolves nothing |
+| Entity | `from_context` | Shots only (*Select Shot*; picking one imports, as **Import** does); `from_context` in an asset workfile resolves nothing |
 | Channel | `default` | |
 | Department | `from_context` | Every shot department, not just the publishable ones — the camera is read from whichever department authored it |
 | Version | `latest` | As on `import_shot` |

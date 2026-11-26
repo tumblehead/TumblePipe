@@ -12,6 +12,42 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.133.0 — 2026-11-26
+
+### Features
+- feat(pipe): open a named entity's workfile; read a prim's department history (`8a98cfda`)
+
+### Fixes
+- fix(farm): the launcher finds a Houdini at a drive's root, as the scan does (`da05af4f`)
+- fix(live): a Linux render is named as it was started, not as its symlink resolves (`ac271ef1`)
+- fix(houdini): the install scan finds a Houdini at a drive's root (`ca1e5d84`)
+- fix(houdini): a workfile opened at startup with load errors is not untitled (`f70d88ac`)
+- fix(comp): a Multi comp opens without re-checking every export per import (`b45245f2`)
+- fix(window): the macOS Dock icon is set from the main thread only (`f97edf10`)
+- fix(ci): the icons' resource scripts check out LF everywhere (`0eee6627`)
+- fix(ci): the player tests find FFmpeg on macOS without hijacking hffmpeg (`987ea56f`)
+- fix(tests): the hython env prop's SDK path has no drive colon (`504047f1`)
+- fix(cinedex): the movie-only save-dialog wrappers are test-only (`d5de4cac`)
+- fix(tests): the hython env prop checks PYTHONPATH entries, not a substring (`316961ac`)
+- fix(tests): the live-playblast stand-ins run under the interpreter itself (`3a6aeef3`)
+- fix(tests): the Houdini-driving modules find Houdini on every CI worker (`b90644a2`)
+- fix(ci): test.sh raises the open-file soft limit to the hard one (`366b36f1`)
+- fix(ci): the icon SVGs and the wizard's golden tree check out LF everywhere (`5134a0ad`)
+
+### Documentation
+- docs(ci): what a RUN=tests worker needs, and a preflight comment the scan fix made stale (`a6c4e1aa`)
+- docs: ask scene_is_untitled, not isNewFile; Shift-opened workfiles read as untitled (`3b658c90`)
+- docs(comp): why a Multi comp opened slowly, and the rule that keeps it fast (`454990f1`)
+
+### Tests
+- test(live, window): the Linux naming runs on a fake /proc; the Dock icon off the main thread (`4f101bd6`)
+- test(houdini): a version at a drive's root and under Program Files is found once (`0d7e6cb1`)
+- test(ci): pin what the CI worker fixes depend on (`d8d99b7c`)
+- test: no new isNewFile() call; the calls and history fields Radial's jump lists read (`6f733620`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.132.0 (`b84b8169`)
+
 ## v1.132.0 — 2026-11-26
 
 ### Fixes

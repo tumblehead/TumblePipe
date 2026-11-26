@@ -111,6 +111,20 @@ DEFAULT_LOOK = {
 BLUR_SAMPLES_RANGE = (2, 64)
 
 
+def collapse_light(look: dict) -> str:
+    """How the collapse lights ``look``'s input stage
+    (``pipe.usd.collapse.collapse_latest_references``' playblast_light).
+
+    Only Karma's: its 'dome' switches the scene's lights off and adds a
+    white dome. The viewport renderer is lit by its own 'lighting', which
+    needs the scene's lights left as they are, so its stage is collapsed as
+    'scene' whatever the hidden Karma 'light' says (Discord, Remy
+    2026-11-26: a TumbleView farm playblast set to Lighting: scene rendered
+    under the dome, flat with occlusion, because the default 'light' is
+    'dome')."""
+    return 'scene' if look.get('renderer') == 'viewport' else look['light']
+
+
 def valid_look(look) -> bool:
     """A playblast look: its renderer, the viewport's shading, lighting,
     culling, transparency and blurs, how Karma lights it, its samples, clay

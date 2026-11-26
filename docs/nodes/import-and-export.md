@@ -19,7 +19,7 @@ Source: [`otls/lop_th.import_asset.1.0`](../../otls/lop_th.import_asset.1.0/th_8
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | `from_context` | The asset to import (button opens *Select Asset*) |
+| Entity | `from_context` | The asset to import (button opens *Select Asset*; picking one imports) |
 | Channel | `default` | Which channel's staged build to load |
 | Version | `latest` | `latest` / `current` / `v####` of the staged build; the label beside it shows the version that resolved |
 | Exclude departments | *(none)* | Checkable list; ticking re-imports immediately |
@@ -89,14 +89,15 @@ row per picked asset, in the picker's order, with Channel `default` and
 Version `latest`; with nothing picked, Enter takes the highlighted card.
 Assets already in a row are skipped, and the Houdini status bar says how
 many were added and skipped, e.g. *import_assets1: Added 3 assets, skipped
-1 already in the list. Press Import to load them.* Rows already there are
-left as they are, and nothing is imported until you press **Import**.
+1 already in the list.* Then the node imports, as **Import** does: one
+click, no trip to the Import button. Rows already there are left as they
+are. Cancel, or Select with nothing picked, changes nothing.
 
 **Asset Imports** is a multiparm; each row has:
 
 | Label | Default | What it does |
 |---|---|---|
-| **Browse...** + label | *(empty)* | The row's asset: the row's **Browse...** re-picks it (one asset). There is no `from_context` row here — every row is a concrete asset. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
+| **Browse...** + label | *(empty)* | The row's asset: the row's **Browse...** re-picks it (one asset), then imports, as **Import** does. There is no `from_context` row here — every row is a concrete asset. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
 | Channel | `default` | Per row |
 | Version | `latest` | Per row |
 | Variant | *As published* | A USD variant for the row's asset prim — every variantSet/variant the imported asset carries, as `set: variant` when it has more than one set. Replaces a Set Variant LOP after the node. Applied to every copy, and published |
@@ -115,7 +116,6 @@ on export.)
 
 Gotchas:
 
-- Picking an entity on a row does *not* re-import; press **Import**.
 - The **Variant** menu lists what the row's import composed, so it is empty
   (*As published* only) until the row has been imported once. Changing it
   applies immediately, without re-importing. It is authored below the
@@ -149,7 +149,7 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | `from_context` | The shot (button opens *Select Shot*) |
+| Entity | `from_context` | The shot (button opens *Select Shot*; picking one imports, as **Import** does) |
 | Channel | `default` | Which channel's staged build |
 | Department | `from_context` | The department whose layer is left out — the workfile authors it. To leave nothing out, set **Exclude** to **Nothing** (the older way, typing the reserved value `none` here, still works) |
 | Exclude | This + Downstream | **This + Downstream** also leaves out every department after it in the shot's pipeline order, so you compose only what is upstream of your work. **This Department Only** keeps the later ones — the environment template uses it so environment sees the animation camera and characters. **Nothing** loads every department, your own included — use it on a check import below the export to review what you published. Changing it re-imports immediately |
@@ -242,7 +242,7 @@ Source: [`otls/lop_th.import_layer.1.0`](../../otls/lop_th.import_layer.1.0/th_8
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | `from_context` | Any asset or shot |
+| Entity | `from_context` | Any asset or shot (Browse... picks one, then imports, as **Import** does) |
 | Channel | `default` | Which channel's export; the entity's `_shared` layer is sublayered underneath when it has one |
 | Department | `from_context` | Whose export to load. `from_context` is **your own** department — almost never what you want on an import |
 | Version | `current` | `current` (newest finished export on disk) or a `v####`. There is no `latest`; the load is always pinned |
@@ -288,7 +288,8 @@ Source: [`otls/lop_th.export_layer.1.0`](../../otls/lop_th.export_layer.1.0/th_8
 | Type | Local | Local export, or Farm submission |
 | Downstream Exports | *(none)* | Farm only: departments after this one to re-export in the same job |
 | Pool / Priority | first pool / `50` | Farm only |
-| Batch | `0` | Local only: export in frame chunks and stitch (0 = one pass) |
+| Batch | `0` | Frames per chunk the export cooks. `0` sizes it from the stage: one file while it is small, [value clips](#large-exports-are-written-as-clips) when it is not |
+| Batch Mode | Clips | How chunks are joined: **Clips** (each chunk a file in `clips/`) or **Stitched** (one file with every frame, as batched exports were written before) |
 
 Buttons:
 
@@ -328,14 +329,59 @@ node: set **Targets** to Chosen, All shots or All assets.
   Downstream Exports and the Build USD task follow the node's own entity
   only.
 
+### Large exports are written as clips
+
+A shot's animation layer holds every frame's points, normals and changing
+topology: Sigurd 010/010's 776 frames were 3.0 GB on disk and about 13 GB
+in memory, all at once, while exporting, copying to the server and in every
+render task. With **Batch** `0` the export now sizes itself (#108):
+
+- It reads one frame of the stage it exports: every attribute with time
+  samples, its length times its element size.
+- While the whole range is under **1.5 GB** of samples the export is one
+  file, exactly as before. Most layers are.
+- Above it, the range is cooked in chunks and written as USD **value
+  clips**: each chunk's samples in a file of its own in `clips/` beside the
+  layer, and the published `<entity>_<channel>_<department>_v####.usd`
+  holding everything else (prims, topology, materials, arcs) and naming the
+  chunks. A chunk's length is a multiple of the shot's farm render batch
+  (Farm Submit's **Batch**, 10 by default), as many batches as fit the
+  budget, so a render task reads one clip.
+- Each chunk also carries the next chunk's first frame, so motion blur and
+  subframes at a chunk's last frame read as in one file.
+
+Nothing that reads the layer can tell: imports, the staged build, the
+farm's collapsed render stage, a Multi's time offset, export to several
+shots and the archive see the same values at every frame and between
+frames. A version folder of a clipped export looks like:
+
+```
+v0011/
+  shots_010_010_default_anim_v0011.usd        the layer (no time samples)
+  clips/
+    shots_010_010_default_anim_v0011.1001-1100.usd
+    shots_010_010_default_anim_v0011.1101-1200.usd
+    ...
+    shots_010_010_default_anim_v0011.manifest.usd   the attributes the clips sample
+  context.json
+```
+
+A **Batch** above 0 cooks chunks of that many frames, joined by **Batch
+Mode**: Clips, or Stitched (one file, every frame in memory at once).
+`TH_EXPORT_CLIP_BUDGET_MB` sets the budget in MB for a session, for a test
+or a machine short of memory. Source:
+[`usd/chunk_plan.py`](../../python/tumblepipe/pipe/usd/chunk_plan.py),
+[`usd/stitch.py`](../../python/tumblepipe/pipe/usd/stitch.py).
+
 The node embeds a USD ROP whose frame range, output path and Save to Disk
 the pipeline drives during an export. Those parms are hidden (from the release after 1.46.0);
 they used to show as an **export** folder whose Save to Disk fired the raw
 ROP outside the pipeline.
 
 What a local export writes: `export/<entity>/<channel>/<department>/v####/`
-with a `<entity>_<channel>_<department>_v####.usd` and a `context.json`
-recording every tracked asset on the stage (for an asset export, except
+with a `<entity>_<channel>_<department>_v####.usd` (and, for a
+[large export](#large-exports-are-written-as-clips), its `clips/` folder)
+and a `context.json` recording every tracked asset on the stage (for an asset export, except
 the ones that came in through an imported shot layer; for a shot export,
 except the ones that came in only through a later department's layer and
 that no import node in the workfile brings in) —
@@ -717,7 +763,11 @@ recooking the node and every rig in its dive each frame, as 1.85.0 did.
 `_TumblePipe/pipeline`. The dive holds `th::import_rigs` → APEX Scene
 Animate → `output0`, both when the animation shot template places the node
 (as `animate_shot`) and when you place one from the Tab menu; see
-[Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop). There is
+[Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop). To add
+characters there, use that node's **Add Rigs from Scene** (every rigged
+asset on the shot stage) or **Browse Rigs...** (pick several in the asset
+picker); both import at once. The single-rig `th::import_rig` it builds
+from is hidden from the Tab menu. There is
 no Scene Invoke in the dive: `th::animate` invokes the scene itself (see
 **Characters** below). Up to 1.91 a node from the Tab menu had an empty
 dive, and the template ended the dive in a Scene Invoke (Packed Folders,
@@ -760,6 +810,28 @@ node invokes it, and the **Characters** folder decides what comes out:
   **Skeleton** its posed skeleton, for CFX, and **Frames** the frames it
   shows on (below). A character with no row outputs its geometry and no
   skeleton, on every frame.
+- **Add Characters...** picks assets with a rig published and adds them as
+  characters: Browse Rigs... on the dive's `th::import_rigs` on Follow
+  Stage ([Follow Stage](assets.md#follow-stage)). A pick not on the stage
+  is added to it through a `th::import_assets` this node manages, made on
+  first use just above it (`<node>_characters`, on `latest`); its rig row
+  then follows, and the new character gets a Characters row (and a
+  `th::layout_keys` row). The status bar says what was added, un-skipped,
+  already in, or has no rig.
+- **Add Assets for Rigs** (on by default): off, Add Characters adds only
+  the rig row, leaving the stage alone; the row is held, its character at
+  the origin with no lookdev, and the comment says so.
+
+When the `th::import_rigs` in the dive is on Follow Stage, its rows follow
+the stage entering this node: after an import upstream, when the workfile
+opens, and on Sync Now; the new characters get rows here too. The cook
+only warns when the stage moved since. When a character animated alone
+becomes several copies (`hero` -> `hero0`, `hero1`), its keys in the
+dive's Scene Animates move to `hero0`, and its Characters row and
+`th::layout_keys` row are renamed with them, in one undo step; never onto
+keys `hero0` has already (then `hero` is kept beside it, and the
+`th::import_rigs` comment says so). See
+[Follow Stage](assets.md#follow-stage).
 
 **Frames** hides a character outside the frames you give it: whole frames
 and ranges of them, separated by spaces or commas (`1001-1100 1250-1300
@@ -841,10 +913,10 @@ line per asset naming the rig's characters and the stage's copies: a
 character the stage lacks would land as a new prim at the origin with no
 lookdev, and a stage copy no character is named for stays unanimated. Set
 the instances on the shot's scene in the Entity Editor and press
-**Discover** on `th::import_rigs`, or, when the rig makes more characters
+**Add Rigs from Scene** on `th::import_rigs`, or, when the rig makes more characters
 than the stage has copies, press **Set Scene Copies** on `th::import_rigs`,
 which writes the count into the shot's scene after a confirm, re-imports
-the shot and runs Discover; see
+the shot and runs Add Rigs from Scene; see
 [`th::import_rig`](assets.md#thimport_rig-sop) for the text. Nothing is
 blocked; it cooks as before. Up to 1.124 this went unsaid.
 

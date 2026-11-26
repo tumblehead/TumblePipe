@@ -341,7 +341,7 @@ class DropRouter:
             hou.ui.setStatusMessage(
                 f"{', '.join(sop_only)} is published from SOPs, not as a USD "
                 "layer, so it can't be imported into a LOP network. "
-                "Use th::import_rig in a SOP network for a rig.",
+                "Use th::import_rigs in a SOP network for a rig.",
                 severity=hou.severityType.Warning,
             )
             return True

@@ -101,5 +101,7 @@ def execute(kwargs):
 
 @button('Import Lop Camera')
 def select(kwargs):
-    """Entity button."""
-    ImportLopCamera(kwargs['node']).pick_entity('Select Shot')
+    """Entity button: pick the shot, then Import (as the Import button
+    does). Cancel changes nothing."""
+    if ImportLopCamera(kwargs['node']).pick_entity('Select Shot'):
+        execute(kwargs)

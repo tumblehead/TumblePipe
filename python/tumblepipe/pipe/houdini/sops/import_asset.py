@@ -53,8 +53,9 @@ def execute(kwargs):
 
 @button('Import Asset')
 def select(kwargs):
-    """Entity button: pick the asset, then import it."""
+    """Entity button: pick the asset, then Import (as the Import button
+    does). Cancel changes nothing."""
     node = ImportAsset(kwargs['node'])
     # The embedded node's 'entity' channel-references this one's.
     if node.embedded().pick_entity('Select Asset'):
-        node.execute()
+        execute(kwargs)

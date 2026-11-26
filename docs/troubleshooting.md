@@ -77,10 +77,14 @@ and every one of those checks looked through the whole scene. Later
 releases check the exports once, after the workfile has opened. Submit
 Composite on a Multi comp was slow for the same reason and is fast now too.
 
-If one import in the comp cannot resolve (its Reads says why, e.g. a shot
-that is not in the project), every open re-runs all the imports to try it
-again; that now takes seconds, but fixing or deleting the broken import
-and saving stops it.
+Through 1.133.0, one render import that could not resolve (its Reads says
+why: a shot not rendered yet, a beauty without alpha) made every open re-run
+all the comp's imports, as did one shot with a new render: a 22-shot comp
+on a share spent 15-20 s on it at every open. Later releases re-run only the
+render imports that failed or whose renders moved, and read each render
+folder once per refresh: the same comp reopens in under half a second, and
+a refresh of every import takes about half as long. Fixing or deleting a
+broken import still stops even that re-run.
 
 ### A workfile opened with Shift acts as if it were untitled
 
@@ -670,6 +674,26 @@ TumblePipe exports need Houdini Indie or a commercial licence. Before
 1.86 the same failure read *Expected file not created: stage.usd* with
 `Files found: ['stage.usdnc']` and blamed the disk.
 
+### A long shot's export takes minutes, fills memory, or its version has a `clips/` folder
+
+An animation layer holds every frame's points and normals: Sigurd 010/010
+(776 frames) was 3.0 GB on disk and about 13 GB in memory at once, during
+the export, the copy to the server and in every render task. An export
+with **Batch** `0` now [sizes itself](nodes/import-and-export.md#large-exports-are-written-as-clips):
+over 1.5 GB of samples it is written in chunks as USD value clips, a file
+per chunk in `clips/` beside the layer. That is expected, and nothing
+that reads the layer sees a difference. To check one, open the layer and
+look for `clips = { dictionary th_<layer name> = ... }` on its root prims.
+
+- A clipped version must keep its `clips/` folder: copy, move or archive
+  the whole version folder, never the `.usd` alone (the layer then has
+  prims and topology but holds still).
+- Still running out of memory on a machine: set
+  `TH_EXPORT_CLIP_BUDGET_MB` (megabytes, say `500`) before Houdini starts
+  for smaller clips, or set **Batch** to a number of frames by hand.
+- **Batch Mode** Stitched writes one file again (every frame in memory
+  at once), for a tool that cannot read clips.
+
 ### Exports and scratch land in `C:\mnt\c\users\tumblehead\...`
 
 The project's `_config/storage.json` still has a WSL-era path such as
@@ -913,8 +937,49 @@ copy your studio customised is left alone; in its `_scrape_rig_imports`,
 keep only the assets for which `import_rigs.has_rig_export(asset_uri)` is
 true, or return the rows of `import_rigs.discover_rig_imports(stage)` as
 the packaged template now does (the assets tagged animatable that have a
-rig). In an existing workfile, **Discover** on Import Rigs rebuilds the
+rig). In an existing workfile, **Add Rigs from Scene** on Import Rigs rebuilds the
 rows the same way.
+
+### Import Rigs rows change on their own, or a row says "Not on the stage (held)"
+
+`th::import_rigs` on **Rig Sync: Follow Stage** (the default from Rig
+Sync on) makes its rows follow the stage entering `th::animate`
+([Follow Stage](nodes/assets.md#follow-stage)): after an import upstream,
+when the workfile opens, and on **Add Rigs from Scene** (Sync Now). A
+character added on the shot gets a row; one removed from it loses its row
+unless the row is held:
+
+- *Not on the stage (held)*: the row was there before Rig Sync (or was
+  added with Add Assets for Rigs off), and its asset is not on the stage.
+  Its character imports at the origin with no lookdev. Press **Add Held to
+  Stage** to add the asset through the managed `th::import_assets`, or
+  remove the row.
+- *Keyed, not on the stage (kept)*: a character with keys left the
+  stage; its row keeps it so the keys are not lost.
+- *Keys moved to the first copy (one copy became several): Hero ->
+  Hero0*: the shot now has several copies of an asset you animated alone,
+  so `Hero`'s keys (with its Characters and `th::layout_keys` rows) moved
+  to `Hero0`, the copy where `Hero` was. Nothing to do; **Edit > Undo**
+  puts the keys and the rows back together.
+- *Hero kept beside Hero0*: the same, but `Hero0` had keys of its own, so
+  nothing moved (keys are never overwritten) and `Hero` imports at the
+  origin with no lookdev. Copy what `Hero0` needs from `Hero` with Copy
+  Animation, then remove `Hero`'s keys.
+- *Rig Sync is now Follow Stage*: the first sync of a node from before
+  Rig Sync. Nothing on the stage was changed.
+
+To keep rows exactly as you set them, set **Rig Sync** to **Manual**; to
+leave one character out, turn on its row's **Skip**. An **Instances**
+edit on Follow Stage is sent to where the copies come from (Set Scene
+Copies for the shot's scene), or refused naming the department that
+publishes them: change the copies there.
+
+### `place` warns "The shot stage changed since th::import_rigs last synced its rows"
+
+A cook never edits the rows. The stage entering `th::animate` differs from
+the one `th::import_rigs` last synced against (an input rewired, a LOP
+edited by hand upstream). Press **Add Rigs from Scene** (Sync Now) on it,
+or re-import the shot, which syncs.
 
 ### Publish spins forever, then a reopened Asset Browser is empty
 
@@ -1103,6 +1168,23 @@ the Multi workfile if that department should cover it. A single-shot workfile
 with no export nodes at all reports the same way. Up to 1.63.1 both cases
 failed the task instead.
 
+### A farm publish of a long shot sits on "Rendering" for hours
+
+A publish, export or encode runs as one Deadline task covering every frame
+of the shot. Up to 1.133.0 its time limit counted per frame (Deadline's
+frame timeouts), and Deadline multiplies that by the frames in the task: a
+776-frame publish with a 15-minute limit was only stopped after 194 hours.
+A stuck publish held its worker for days. Later releases give such a job
+one limit for the whole task (a publish: 30 minutes plus 15 s a frame, at
+most 6 hours; the table is in
+[Task time limits](deadline.md#task-time-limits)). On an older release,
+fail or requeue the stuck task in Deadline Monitor.
+
+To see where a long publish spends its time, read its task log: the copy of
+the new version to the server reports `copying v0011 to server: 1.2 /
+3.0 GB, 45 MB/s` every 15 seconds and once when done. The same line shows
+in the publish window's status while a local export copies.
+
 ### Clicking the "Farm job finished" notification opens nothing
 
 The click opens the folder of the job the notification names (see
@@ -1215,6 +1297,21 @@ from a pipeline that still rendered playblasts with Hydra Storm. Storm hung
 like this on every real shot the farm tried (HideAndReek/010 on maria-2060,
 030 on judas, and 030 locally), which is why it was removed. Update the
 pipeline and resubmit; playblasts now render with Karma XPU. See
+[Playblast](compositing.md#playblast).
+
+### A TumbleView farm playblast set to Lighting "scene" renders flat
+
+The farm movie looks like a white dome with ambient occlusion, while the
+same shot in the viewport (TumbleView) shows its own lights. Up to 1.133
+the farm collapsed a `viewport` playblast's stage with Karma's **Light**,
+which Farm Submit hides for TumbleView and defaults to *dome*: every scene
+light was switched off and a white dome put in their place
+(`/TumblePipePlayblastLights/dome`), so the delegate had only that dome to
+light the frame with. The collapse now leaves a `viewport` playblast's
+lights as they are and **Lighting** decides. Update the pipeline and
+resubmit; nothing in the scene needs changing. A job submitted before the
+update keeps its collapsed stage: the input USD printed at the top of its
+task log has a `TumblePipePlayblastLights` prim. See
 [Playblast](compositing.md#playblast).
 
 ### "Unable to load render plugin: HdThPlayblastRendererPlugin"

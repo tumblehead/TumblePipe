@@ -2230,9 +2230,10 @@ class _ContextPane(QWidget):
         """A preview on the farm, viewport or Karma XPU — shots only.
 
         The input is the shot's staged 'default' stage cut at this
-        department, and the frame range is the shot's own, so there is no
-        frame or channel field here. Only the chosen renderer's settings
-        show (``_scope_playblast_look``).
+        department, so there is no channel field here. The frames are each
+        shot's own range and rolls until the artist sets them, or matches
+        the Render's (``_match_render_frames``). Only the chosen renderer's
+        settings show (``_scope_playblast_look``).
         """
         box, form = self._section(grid.PLAYBLAST, "Playblast")
         self._pb_dept = self._combo('pb_department', self._renderable_departments)
@@ -2242,6 +2243,41 @@ class _ContextPane(QWidget):
         )
         self._pb_dept.activated.connect(lambda *_a: self._on_cut_changed())
         form.addRow("Up to:", self._pb_dept)
+        # The frames (Remy, 2026-11-26): each shot's own range and rolls
+        # until set, as the Render's; a shorter range to test, or the
+        # render's matched with Match Render. No Frame list: a movie plays
+        # one range.
+        self._pb_first = self._spin('pb_first_frame', -1_000_000, 1_000_000)
+        self._pb_last = self._spin('pb_last_frame', -1_000_000, 1_000_000)
+        self._pb_step = self._spin('pb_step', 1, 1000)
+        self._pb_step.setToolTip(
+            "Playblast every Nth frame of the range (1: every frame), counted "
+            "from the first frame. The movie still plays every frame, each "
+            "rendered one held until the next, as a stepped render's mp4."
+        )
+        form.addRow("Frames:", self._row(
+            self._pb_first, "→", self._pb_last,
+            self._revert('pb_first_frame', 'pb_last_frame'),
+            "Step", self._pb_step, revert=('pb_step',),
+        ))
+        self._pb_pre = self._spin('pb_pre_roll', 0, 1000)
+        self._pb_post = self._spin('pb_post_roll', 0, 1000)
+        self._pb_match = QPushButton("Match Render")
+        self._pb_match.setStyleSheet("padding: 3px 8px;")
+        self._pb_match.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._pb_match.setToolTip(
+            "Set the playblast's Frames, Step and Pre / Post roll to the "
+            "Render section's, so the playblast plays the frames the render "
+            "renders. A Render field left per entity sets its playblast field "
+            "back to per entity, which is the same frame on every shot. With "
+            "a Frame list, the playblast plays from its first frame to its "
+            "last, rolls 0 (a movie is one range)."
+        )
+        self._pb_match.clicked.connect(self._match_render_frames)
+        form.addRow("Pre / Post roll:", self._row(
+            self._pb_pre, "/", self._pb_post, self._pb_match,
+            revert=('pb_pre_roll', 'pb_post_roll'),
+        ))
         self._pb_width = self._spin('pb_res_x', 16, 8192)
         self._pb_height = self._spin('pb_res_y', 16, 8192)
         self._pb_width.setToolTip(
@@ -2372,6 +2408,33 @@ class _ContextPane(QWidget):
         self._pb_priority = self._spin('pb_priority', 0, 100)
         form.addRow("Priority:", self._row(self._pb_priority, revert=('pb_priority',)))
         return box
+
+    def _match_render_frames(self) -> None:
+        """Match Render: the Playblast's frames set to the Render section's
+        (``resolve.playblast_frames_from_render``). A Render field the
+        artist set pins its playblast field to that value; one left per
+        entity unpins it, back to the same shot property."""
+        render = {}
+        for _pb_key, key in resolve.PLAYBLAST_FROM_RENDER:
+            entry = self._fields.get(key)
+            render[key] = entry.value() if entry is not None and entry.pinned else resolve.MIXED
+        frame_list = getattr(self, '_rnd_frame_list', None)
+        values = resolve.playblast_frames_from_render(
+            render, frame_list.text() if frame_list is not None else '',
+        )
+        seeded = self._seed_values()
+        self._seeding = True
+        try:
+            for key, value in values.items():
+                entry = self._fields[key]
+                if value is resolve.MIXED:
+                    entry.unpin(seeded.get(key, resolve.MIXED))
+                else:
+                    entry._write(value)
+                    entry.pin()
+        finally:
+            self._seeding = False
+        self._changed()
 
     def _build_render_section(self) -> Section:
         box, form = self._section(grid.RENDER, "Render")

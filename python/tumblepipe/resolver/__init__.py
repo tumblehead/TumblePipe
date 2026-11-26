@@ -167,6 +167,12 @@ def deferred_refresh():
             _reload_stale_entity_layers()
 
 
+def is_deferring() -> bool:
+    """Whether a ``deferred_refresh`` block is open: a stage cooked now may
+    still compose layers the block's imports moved, until it ends."""
+    return _defer_depth > 0
+
+
 class ResolveError(RuntimeError):
     """An entity:// URI that was required to resolve did not."""
 

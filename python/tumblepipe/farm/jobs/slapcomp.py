@@ -28,6 +28,9 @@ def build(config, paths, staging_path):
         max_minutes = 20,
         paths = paths
     )
-    run_once(job, config['first_frame'], config['last_frame'])
+    # One task over the range: the limit is the whole comp's, 20 minutes
+    # plus 15 s a frame, at most 6 hours (run_once).
+    run_once(job, config['first_frame'], config['last_frame'],
+        minutes_per_frame = 0.25, most_minutes = 6 * 60)
     job.output_paths.append(Path(config['output_path']))
     return job

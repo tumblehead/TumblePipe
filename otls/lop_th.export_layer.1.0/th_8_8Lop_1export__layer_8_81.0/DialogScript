@@ -324,7 +324,20 @@
             label   "Batch"
             type    integer
             default { "0" }
+            help    "Frames per chunk the export cooks. 0 sizes the chunks automatically: a small export is one file, a large one is split into value clips sized to the render batch."
             range   { 0! 100 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "batch_mode"
+            label   "Batch Mode"
+            type    string
+            default { "clips" }
+            help    "How chunks are joined. Clips: each chunk a file in clips/ beside the layer, which names them as value clips (no step holds the whole range in memory, a render loads only its frames). Stitched: one file with every frame, as batched exports were written before."
+            menu {
+                "clips"     "Clips"
+                "stitch"    "Stitched"
+            }
             parmtag { "script_callback_language" "python" }
         }
     }

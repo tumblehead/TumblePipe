@@ -25,7 +25,10 @@ each section's fields. The rules:
 - comp frames that end before they start, or, beside a render, reach
   outside the frames it renders (beside an Into version, outside the
   version: checked at the farm);
-- a render with no channel.
+- a render with no channel;
+- playblast frames that make no movie (:func:`playblast_problems`): ending
+  before they start, starting at frame 0 or before with the pre-roll, a
+  Step below 1.
 
 What a comp follows (:func:`comp_follows`) is part of the same rule: the
 frames the render beside it makes, else what the renders on disk cover
@@ -133,6 +136,65 @@ def frame_list(settings: dict) -> tuple[tuple[Range, ...], str | None]:
         return frame_ranges.read(text, *span), None
     except frame_ranges.FrameListError as e:
         return (), str(e)
+
+
+#: The settings keys of the playblast's frames, as Farm Submit resolves
+#: them (``farm.submit.settings``): First, Last, Step, Pre / Post roll.
+PLAYBLAST_FRAME_KEYS = (
+    'pb_first_frame', 'pb_last_frame', 'pb_step', 'pb_pre_roll', 'pb_post_roll',
+)
+
+
+def playblast_step(settings: dict) -> int:
+    """The playblast's Step, 1 when unset or not a whole number above 0
+    (:func:`playblast_problems` refuses the latter)."""
+    step = _int(settings.get('pb_step'))
+    return step if step is not None and step > 0 else 1
+
+
+def playblast_frames(settings: dict) -> tuple[int, int, int] | None:
+    """``(first, last, step)`` the playblast plays: its First and Last with
+    the rolls on (Remy, 2026-11-26), on its Step; None when the settings
+    carry no First and Last (a caller that never sent them: the farm then
+    plays the shot's own range, rolls included, every frame)."""
+    first, last = _int(settings.get('pb_first_frame')), _int(settings.get('pb_last_frame'))
+    if first is None or last is None:
+        return None
+    return (
+        first - (_int(settings.get('pb_pre_roll')) or 0),
+        last + (_int(settings.get('pb_post_roll')) or 0),
+        playblast_step(settings),
+    )
+
+
+def playblast_problems(settings: dict) -> list[str]:
+    """Why the playblast's frames make no movie: they end before they
+    start, start at frame 0 or before once the pre-roll is on (as a shot's
+    range may not, ``config.timeline.FrameRange``), a negative roll, or a
+    Step below 1. None when the playblast is off or sends no frames."""
+    if not settings.get('playblast'):
+        return []
+    found = []
+    step = settings.get('pb_step')
+    if step is not None and (_int(step) is None or step < 1):
+        found.append(f"the playblast step must be a whole number from 1, not {step!r}")
+    for key, what in (('pb_pre_roll', 'pre-roll'), ('pb_post_roll', 'post-roll')):
+        roll = _int(settings.get(key))
+        if roll is not None and roll < 0:
+            found.append(f"the playblast {what} cannot be negative ({roll})")
+    first, last = _int(settings.get('pb_first_frame')), _int(settings.get('pb_last_frame'))
+    if first is None or last is None:
+        return found
+    if first > last:
+        found.append(f"the playblast frames {first}-{last} end before they start")
+        return found
+    frames = playblast_frames(settings)
+    if frames is not None and frames[0] <= 0:
+        found.append(
+            f"the playblast starts at frame {frames[0]} with its pre-roll: "
+            "it must start at frame 1 or later"
+        )
+    return found
 
 
 def into_version(settings: dict) -> str:
@@ -320,6 +382,7 @@ def problems(
     if frame_list_error is not None:
         found.append(frame_list_error)
     found.extend(repair_problems(settings))
+    found.extend(playblast_problems(settings))
     repairing = repair.is_repair(into_version(settings))
     if comp and frame_ranges.is_multi(ranges) and not repairing:
         found.append(

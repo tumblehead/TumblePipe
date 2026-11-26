@@ -1427,7 +1427,11 @@ def rig_copies_message(sop_node) -> str:
     The characters land on the stage prims of their names: one the stage
     lacks is a new prim at the origin with no lookdev, a stage copy no
     character is named for stays unanimated. A warning only: reading the
-    rig nodes never fails the cook.
+    rig nodes never fails the cook. A rig import named after the stage
+    copies (Rig Sync's hidden ``names``) is judged by those names. The
+    last line is Rig Sync's drift warning when the stage changed since a
+    th::import_rigs on Follow Stage synced (``animate_sync.drift_message``):
+    the cook only warns, it never edits the rows.
     """
     from tumblepipe.pipe.houdini import shot_start
     from tumblepipe.pipe.houdini.lops import animate_ghost
@@ -1449,9 +1453,16 @@ def rig_copies_message(sop_node) -> str:
             if asset_uri is None:
                 continue
             message = import_rig.copies_warning(
-                stage, asset_uri, node.parm('instances').eval())
+                stage, asset_uri, node.parm('instances').eval(),
+                import_rig.node_names(node))
             if message and message not in messages:
                 messages.append(message)
+        # A th::import_rigs on Follow Stage whose stage moved on since it
+        # synced: only a warning here, a cook never edits the network.
+        from tumblepipe.pipe.houdini import animate_sync
+        drift = animate_sync.drift_message(dive, stage)
+        if drift and drift not in messages:
+            messages.append(drift)
         return '\n'.join(messages)
     except Exception:
         return ''

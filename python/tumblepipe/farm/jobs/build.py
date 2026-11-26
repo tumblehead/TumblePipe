@@ -46,10 +46,12 @@ def build(config, paths, staging_path):
         pool = config['pool_name'],
         group = 'general',
         priority = config['priority'],
-        max_minutes = 5,
+        max_minutes = 10,
         paths = paths
     )
-    # One task: the worker builds the whole range itself.
-    run_once(job, *(frames or (0, 0)))
+    # One task: the worker builds the whole range itself. Its limit is the
+    # whole build's: 10 minutes plus 6 s a frame, at most 2 hours (run_once).
+    run_once(job, *(frames or (0, 0)),
+        minutes_per_frame = 0.1, most_minutes = 2 * 60)
     job.output_paths.append(Path(config['output_path']))
     return job

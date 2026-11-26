@@ -350,10 +350,10 @@ def open_location(kwargs):
 
 @button('Import Layer')
 def select(kwargs):
-    """Entity button: pick the entity, then import it."""
-    node = ImportLayer(kwargs['node'])
-    if node.pick_entity():
-        node.execute()
+    """Entity button: pick the entity, then Import (as the Import button
+    does). Cancel changes nothing."""
+    if ImportLayer(kwargs['node']).pick_entity():
+        execute(kwargs)
 
 def output_modified_prims(raw_node) -> str:
     """Return the prim path this HDA wrote, for the output's modifiedprims.

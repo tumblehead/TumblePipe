@@ -16,8 +16,11 @@ def build(config, paths, staging_path):
         pool = settings['pool_name'],
         group = 'houdini',
         priority = config['tasks']['export']['priority'],
-        max_minutes = 15,
+        max_minutes = 30,
         paths = paths
     )
-    run_once(job, settings['first_frame'], settings['last_frame'])
+    # One task over the range: the limit is the whole export's, 30 minutes
+    # plus 15 s a frame, at most 6 hours (run_once).
+    run_once(job, settings['first_frame'], settings['last_frame'],
+        minutes_per_frame = 0.25, most_minutes = 6 * 60)
     return job

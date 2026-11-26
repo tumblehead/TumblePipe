@@ -502,6 +502,19 @@ def list_versions(renders: Mapping, department: str, channel: str) -> list[str]:
     return _complete_versions(renders.get(department), channel)
 
 
+def newest_version(renders: Mapping, department: str, channel: str) -> Optional[str]:
+    """``list_versions(...)[0]``, or None, without checking the older
+    versions: each check lists every AOV folder of the version, and a
+    resolve only reads the newest (2026-11-26)."""
+    render = renders.get(department)
+    if render is None or channel not in render.layers: return None
+    layers = render.layers[channel]
+    for version_name in sorted(layers, key=naming.get_version_code, reverse=True):
+        if layers[version_name].is_complete():
+            return version_name
+    return None
+
+
 def check_step_of(layer) -> Optional[int]:
     """The step of ``layer`` when it is a check render a comp can read: not
     published (Farm Submit's **Step**), and every frame it records on its
@@ -619,10 +632,14 @@ def _check_names(renders: Mapping, department: str, channel: str) -> list[str]:
 
 def _newest(renders: Mapping, department: str, channel: str,
             versions_of=list_versions) -> Optional[Newest]:
-    versions = versions_of(renders, department, channel)
-    if not versions: return None
-    layer = renders[department].layers[channel][versions[0]]
-    return layer_newest(department, versions[0], layer, channel)
+    if versions_of is list_versions:
+        newest = newest_version(renders, department, channel)
+    else:
+        versions = versions_of(renders, department, channel)
+        newest = versions[0] if versions else None
+    if newest is None: return None
+    layer = renders[department].layers[channel][newest]
+    return layer_newest(department, newest, layer, channel)
 
 
 def _fresh_candidates(renders: Mapping, candidates: list[str], channel: str,
@@ -724,13 +741,13 @@ def resolve_render(
         complete = _fresh_candidates(renders, candidates, channel)
         checks = _fresh_candidates(renders, candidates, channel, _check_names)
     for candidate in complete:
-        versions = list_versions(renders, candidate, channel)
-        if not versions: continue
+        newest = newest_version(renders, candidate, channel)
+        if newest is None: continue
         newer = [
             (name, step) for name, step in list_check_versions(renders, candidate, channel)
-            if naming.get_version_code(name) > naming.get_version_code(versions[0])
+            if naming.get_version_code(name) > naming.get_version_code(newest)
         ]
-        return _read(renders, channel, candidate, versions[0],
+        return _read(renders, channel, candidate, newest,
                      newer_check = newer[0] if newer else None)
     for candidate in checks:
         found = list_check_versions(renders, candidate, channel)

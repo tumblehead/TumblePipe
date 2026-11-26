@@ -19,6 +19,29 @@
         label   "Discovery"
 
         parm {
+            name    "rig_sync"
+            label   "Rig Sync"
+            type    string
+            default { "follow" }
+            help    "Follow Stage: the rows follow the stage entering th::animate. One row per animatable asset on it with a rig published, its characters named after the stage copies; a row's channel, version and Skip are kept, a character with keys is never dropped, and a row whose asset is not on the stage is held. They sync when th::import_shot or th::import_assets above imports, when the workfile opens and on Add Rigs from Scene. Browse Rigs... adds an asset to the stage too. Manual: the rows are yours; Add Rigs from Scene replaces them from the stage once."
+            menu {
+                "follow"    "Follow Stage"
+                "manual"    "Manual"
+            }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.execute(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sync_version"
+            label   "Sync Version"
+            type    integer
+            invisible
+            default { "0" }
+            help    "The Rig Sync rules this node last synced under; 0: a node from before Follow Stage, migrated on its first sync."
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "stage_path"
             label   "Stage"
             type    oppath
@@ -30,11 +53,31 @@
         }
         parm {
             name    "discover"
-            label   "Discover"
+            label   "Add Rigs from Scene"
+            type    button
+            joinnext
+            default { "0" }
+            help    "Follow Stage: Sync Now, the rows follow the stage, then Import. Manual: replace the rows with one per animatable asset on the stage that has a rig published (Instances = its prims), keeping a row's channel and version, then Import."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.discover(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "browse_rigs"
+            label   "Browse Rigs..."
+            type    button
+            joinnext
+            default { "0" }
+            help    "Pick several assets at once (Ctrl-click, Shift-click or Select all in view). Follow Stage: the picker lists the assets with a rig; one not on the stage is added to it (through the th::import_assets th::animate manages, when its Add Assets for Rigs is on) and its row follows, a skipped row on the stage is un-skipped. Manual: add a row for each pick that has a rig published, then Import; assets already in a row are skipped."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.browse(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stage_held"
+            label   "Add Held to Stage"
             type    button
             default { "0" }
-            help    "Replace the rows with one per animatable asset on the stage that has a rig published (Instances = its prims), keeping a row's channel and version, then Import."
-            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.discover(kwargs)" }
+            help    "Follow Stage: the rows held because their asset is not on the stage (named in the comment) get it added, through the th::import_assets th::animate manages; then the rows follow."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.stage_held(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }
@@ -143,8 +186,29 @@
                 label   "Instances"
                 type    integer
                 nolabel
+                joinnext
                 default { "1" }
+                help    "The row's characters. Follow Stage: the stage's copies; an edit goes where they come from (the managed th::import_assets, or the shot's scene through Set Scene Copies), a department's publish is refused."
                 range   { 1! 10 }
+                parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.instances_changed(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "skip#"
+                label   "Skip"
+                type    toggle
+                default { "0" }
+                help    "Leave this rig out of the import: an asset on the stage this animation does not animate. Follow Stage keeps it."
+                parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.execute(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "names#"
+                label   "Names"
+                type    string
+                invisible
+                default { "" }
+                help    "The stage copies the row's characters are named after (Follow Stage); empty: the row does not follow the stage."
                 parmtag { "script_callback_language" "python" }
             }
         }

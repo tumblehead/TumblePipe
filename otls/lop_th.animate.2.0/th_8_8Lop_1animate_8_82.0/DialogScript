@@ -35,6 +35,24 @@
             help    "The character shapes to output (the Scene Invoke Shapes pattern). th::animate's own Scene Invoke outputs these; a Scene Invoke in anim_dive is held to them too: shapes it outputs that this does not pick are left out, with a warning."
         }
         parm {
+            name    "add_characters"
+            label   "Add Characters..."
+            type    button
+            joinnext
+            default { "0" }
+            help    "Pick rigged assets to animate. One not on the stage is added to it through a th::import_assets this node manages, placed just above it (Add Assets for Rigs on), and th::import_rigs in anim_dive (Rig Sync: Follow Stage) gives it a row; a skipped row is un-skipped."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.add_characters_from_animate(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "add_assets_for_rigs"
+            label   "Add Assets for Rigs"
+            type    toggle
+            default { "1" }
+            help    "On: Add Characters puts an asset that is not on the stage onto it (through the th::import_assets this node manages), so its rig lands on a stage copy with lookdev. Off: it adds the rig row only, held until the asset is on the stage, with a warning."
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "discover_characters"
             label   "Discover"
             type    button

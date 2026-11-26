@@ -412,21 +412,35 @@ def playblast_config(
     priority: int,
     res: list[int],
     look: dict,
+    frames: tuple[int, int, int] | None = None,
 ) -> dict:
     """The ``playblast/job.py`` config for one shot.
 
-    The range and fps are the shot's own (rolls included), matching the
-    local playblast HDA — never a form value, so each shot in a batch plays
-    its own full range. ``res`` and ``look`` are the submission's (the
-    dialog resolves them per entity).
+    ``frames`` is ``(first, last, step)``, rolls on, as Farm Submit's
+    Playblast frames resolve per shot (``farm.specs.submission
+    .playblast_frames``: each shot's own range unless the artist set one,
+    Remy 2026-11-26). Without them the range is the shot's own (rolls
+    included), every frame, matching the local playblast HDA. The fps is
+    always the shot's. ``res`` and ``look`` are the submission's (the dialog
+    resolves them per entity).
     """
-    frame_range = get_frame_range(entity_uri)
-    if frame_range is None:
-        raise PreviewError(f"No frame range configured for {entity_uri}")
+    if frames is not None:
+        first_frame, last_frame, step_size = frames
+        if not 0 < first_frame <= last_frame or step_size < 1:
+            raise PreviewError(
+                f"Cannot playblast {entity_uri} over frames {first_frame}-"
+                f"{last_frame} on step {step_size}"
+            )
+    else:
+        frame_range = get_frame_range(entity_uri)
+        if frame_range is None:
+            raise PreviewError(f"No frame range configured for {entity_uri}")
+        playblast_range = frame_range.full_range()
+        first_frame, last_frame = playblast_range.first_frame, playblast_range.last_frame
+        step_size = 1
     fps = get_fps(entity_uri)
     if fps is None:
         raise PreviewError(f"No fps configured for {entity_uri} or the project")
-    playblast_range = frame_range.full_range()
     return dict(
         entity=dict(uri=str(entity_uri), department=department),
         settings=dict(
@@ -435,9 +449,9 @@ def playblast_config(
             pool_name=pool_name,
             priority=priority,
             input_path=input_path,
-            first_frame=playblast_range.first_frame,
-            last_frame=playblast_range.last_frame,
-            step_size=1,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            step_size=step_size,
             fps=fps,
             res=list(res),
             look=dict(look),

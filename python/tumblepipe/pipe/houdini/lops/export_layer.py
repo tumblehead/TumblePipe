@@ -23,6 +23,7 @@ from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.pipe.houdini.lops.layer_cook import LayerWriter
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.pipe.usd.retime import shift_directory
+from tumblepipe.pipe.usd.stitch import rename_layer_file
 from tumblepipe.pipe.houdini.export_checks import (
     ExportLayerError,
     check_no_dropped_assets,
@@ -241,10 +242,12 @@ def _copy_to_version(temp_path: Path, version_path: Path):
     """Copy the exported folder's contents into the version folder.
 
     ``context.json`` goes last (``copy_version_contents``): it is what marks
-    the version finished.
+    the version finished. The copy reports its progress ("copying v0011 to
+    server: 1.2 / 3.0 GB, 45 MB/s") itself.
     """
-    report_progress(f"copying {version_path.name} to server")
-    copy_version_contents(temp_path, version_path)
+    copy_version_contents(
+        temp_path, version_path, label=f"copying {version_path.name} to server",
+    )
 
 
 class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode, LayerWriter):
@@ -516,7 +519,8 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode, LayerWri
                     layer_file_name = get_layer_file_name(
                         target_uri, channel_name, department_name, version_name
                     )
-                    (temp_path / cook_name).rename(temp_path / layer_file_name)
+                    # A clipped layer's clips and clip set take its name
+                    rename_layer_file(temp_path, cook_name, layer_file_name)
                     if shift != 0:
                         shift_directory(temp_path, shift)
                     self._finish_version(

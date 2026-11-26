@@ -33,6 +33,7 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.farm import worker
 from tumblepipe.farm.pipelines import preview
 from tumblepipe.farm.specs import collapse as collapse_spec
+from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.worker import error, headline
 from tumblepipe.pipe.houdini.nodes import NodeError
 
@@ -121,7 +122,7 @@ def main(config: dict) -> int:
                 config['playblast']['department'],
                 output_dir,
                 paths,
-                light=config['playblast']['look']['light'],
+                light=playblast_spec.collapse_light(config['playblast']['look']),
             )
     except preview.PreviewError as failure:
         return error(str(failure))

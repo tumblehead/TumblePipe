@@ -19,6 +19,11 @@ a bare pane (only what the section builder touches) and pins:
   6. Lighting and Culling (Martin, 2026-11-11) and Transparency (Martin,
      2026-11-12) are TumbleView rows whose menus offer the spec's values
      and read back as the look's tokens.
+  7. The frames (Remy, 2026-11-26): Frames (First → Last, Step) and
+     Pre / Post roll rows under Up to, seeded unpinned, pinned on an edit.
+  8. Match Render copies the Render section's frames: a set field pins
+     its playblast field, a per-entity one unpins it; a Frame list plays
+     from its first frame to its last, rolls 0.
 
 Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
@@ -172,6 +177,59 @@ def main() -> int:
             check(f"{label} seeded {value} reads back {value}", field.value() == value,
                   repr(field.value()))
 
+    # 7. The frames (Remy, 2026-11-26): First → Last, Step and Pre / Post
+    # roll, spin fields that seed unpinned (each shot's own) and pin on an
+    # edit
+    frame_keys = ('pb_first_frame', 'pb_last_frame', 'pb_step', 'pb_pre_roll', 'pb_post_roll')
+    check("the playblast has First, Last, Step and Pre / Post roll fields",
+          all(key in pane._fields and pane._fields[key].kind == 'spin' for key in frame_keys))
+    labels = [pane._pb_form.itemAt(i, sjd.QFormLayout.LabelRole).widget().text()
+              for i in range(pane._pb_form.rowCount())
+              if pane._pb_form.itemAt(i, sjd.QFormLayout.LabelRole) is not None]
+    check("Frames and Pre / Post roll rows sit under Up to",
+          labels[:3] == ['Up to:', 'Frames:', 'Pre / Post roll:'], str(labels[:4]))
+    seeded = dict(pb_first_frame=1001, pb_last_frame=1065, pb_step=1, pb_pre_roll=0, pb_post_roll=0)
+    pane._seeding = True    # as the dialog seeds (_reseed_form)
+    for key, value in seeded.items():
+        pane._fields[key].seed(value)
+    pane._seeding = False
+    check("seeded frames show the shot's range, unpinned",
+          all(pane._fields[k].value() == v and not pane._fields[k].pinned for k, v in seeded.items()))
+    pane._pb_last.setValue(1030)
+    check("editing Last pins it", pane._fields['pb_last_frame'].pinned
+          and pane._fields['pb_last_frame'].value() == 1030)
+
+    # 8. Match Render copies the Render's frames: a set field pins its
+    # playblast field to that value, a per-entity one unpins it; a Frame
+    # list plays from its first frame to its last, rolls 0
+    render = {key: pane._spin(key, low, 1_000_000) for key, low in (
+        ('first_frame', -1_000_000), ('last_frame', -1_000_000), ('render_step', 1),
+        ('pre_roll', 0), ('post_roll', 0),
+    )}
+    pane._rnd_frame_list = sjd.QLineEdit()
+    for key, value in (('first_frame', 1010), ('render_step', 2), ('pre_roll', 4)):
+        render[key].setValue(value)                 # pins, as an edit does
+    pane._seeding = True
+    pane._fields['last_frame'].seed(1065)            # per entity
+    pane._fields['post_roll'].seed(0)
+    pane._seeding = False
+    pane._pb_match.click()
+    got = {key: pane._fields[key].value() for key in frame_keys}
+    pins = {key: pane._fields[key].pinned for key in frame_keys}
+    check("Match Render pins the Render's set fields and unpins its per-entity ones",
+          got['pb_first_frame'] == 1010 and got['pb_step'] == 2 and got['pb_pre_roll'] == 4
+          and pins == dict(pb_first_frame=True, pb_last_frame=False, pb_step=True,
+                           pb_pre_roll=True, pb_post_roll=False),
+          f"{got} {pins}")
+    pane._rnd_frame_list.setText('1020-1030 1040-1050')
+    pane._pb_match.click()
+    got = {key: pane._fields[key].value() for key in frame_keys}
+    check("Match Render with a Frame list plays its first to last frame, rolls 0",
+          (got['pb_first_frame'], got['pb_last_frame'], got['pb_pre_roll'], got['pb_post_roll'])
+          == (1020, 1050, 0, 0) and all(pane._fields[k].pinned for k in frame_keys
+                                        if k != 'pb_step'),
+          str(got))
+
     shot = os.environ.get('PLAYBLAST_SECTION_SCREENSHOT')
     if shot:
         box.resize(520, box.sizeHint().height())
@@ -180,7 +238,7 @@ def main() -> int:
             pane._scope_playblast_look()
             box.grab().save(shot.replace('.png', f'_{chosen}.png'))
 
-    total = 1 + 3 + 3 + 6 + 1 + 3 * 4
+    total = 1 + 3 + 3 + 6 + 1 + 3 * 4 + 4 + 2
     print(f"\n{total - len(FAILED)}/{total} checks passed")
     return 1 if FAILED else 0
 

@@ -195,6 +195,11 @@ imports it.
   26-node Multi on an SMB share made 7,080 `stat()` calls (42 s) without
   them. Code that exports inside such a block does not see its own new
   version in a listing; `get_next_version_path` always reads the disk.
+  A third block, `pipe.paths.render.cached_render_reads()`, does the same
+  for renders: each version's `context.json`, each AOV folder's listing and
+  each version's completeness are read once per refresh (one render import
+  asked them 6-10 times; 25 imports on a share took 22 s). Frames written
+  inside it are not seen by a later read in it. All three are per thread.
 
   A process holds **one store per config folder**
   (`config.store.shared_store`): the Asset Browser's per-project clients

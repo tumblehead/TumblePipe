@@ -224,6 +224,41 @@ Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 at once. The job builders in `python/tumblepipe/farm/jobs/` and the
 pipelines in `python/tumblepipe/farm/pipelines/` are complete examples.
 
+### Task time limits
+
+`farm_job`'s `max_minutes` becomes the job's `TaskTimeoutSeconds`. What
+Deadline does with it depends on `EnableFrameTimeouts`, which multiplies
+the timeout by the frames in each task:
+
+- **Batched jobs** (`run_batched`, `run_blocks`: render, denoise, composite)
+  keep frame timeouts on. `max_minutes` is per frame, so a 10-frame render
+  chunk with 45 minutes gets 7.5 hours. A block job's tasks are one
+  "frame" each, so its limit is raised to the largest block's frame count.
+- **One-task jobs** (`run_once`: publish, export, stage, build, playblast,
+  slapcomp, mp4, sync, collapse, notify, Render Edit) turn frame timeouts
+  off and get one limit for the whole task. Up to 1.133.0 they had frame
+  timeouts on too, and their task covers every frame of the shot, so a
+  776-frame publish with 15 minutes was killed only after 194 hours: a
+  stuck publish held its worker for days. `run_once` takes the limit as
+  `max_minutes` plus `minutes_per_frame` per frame of the span, at most
+  `most_minutes`:
+
+  | Job | Base | Per frame | At most |
+  |---|---|---|---|
+  | publish, export, stage | 30 min | 15 s | 6 h |
+  | build | 10 min | 6 s | 2 h |
+  | playblast | 45 min | 30 s | 12 h |
+  | slapcomp | 20 min | 15 s | 6 h |
+  | mp4, sync | 20 min | 3 s | 3 h |
+  | collapse, notify, Render Edit | 15 / 10 / 240 min | (one frame) | |
+
+  A 776-frame publish gets 30 + 194 = 224 minutes. A task that runs past
+  its limit errors on Deadline, so a publish that legitimately needs more
+  needs a larger `most_minutes` in its job builder.
+
+The local farm and *Run here* give a task the same limit
+(`farm.local.queue.task_timeout`).
+
 ## Running farm jobs on this machine
 
 Farm Submit's **Run on** choice (beside Close and Submit) sends a submission
@@ -246,12 +281,14 @@ on Deadline, and runs in the background as a render node would run it.
   Before that it strips the session that started it (Houdini's variables,
   `PYTHONPATH`, `$HFS` on `PATH`, the pipeline's `TH_*`/`TT_*`/`HPM_*`). A
   task sees only this machine's environment plus the job's, as on the farm.
-- **Time limit:** a job's task timeout counts per frame, as on Deadline
-  (TumblePipe submits every job with frame timeouts on). The runner keeps one
-  limit per job, so each task gets the limit times the frames in the job's
-  largest task. A 10-frame render chunk with a 45-minute limit gets
-  7.5 hours. Up to 1.101.0 a local task got the per-frame limit as its whole
-  limit, so long chunks timed out here that the farm would have finished.
+- **Time limit:** a task gets the limit Deadline would give it (see
+  [Task time limits](#task-time-limits)). A batched job's timeout counts per
+  frame: the runner keeps one limit per job, so each task gets the limit
+  times the frames in the job's largest task. A 10-frame render chunk with a
+  45-minute limit gets 7.5 hours. A one-task job (publish, export, encode)
+  gets its whole-task limit. Up to 1.101.0 a local task got the per-frame
+  limit as its whole limit, so long chunks timed out here that the farm
+  would have finished.
 - **hpm:** the runner keeps its own `hpm` (artist machines have none on
   `PATH`). It downloads `$HPM_VERSION` (else the plugin's pinned default)
   from the hpm releases, as the plugin does on a render node.
@@ -495,8 +532,8 @@ Desktop (`python -m tumblepipe.farm.manager`).
   list), which fill in as frames land while the window is open. A
   **playblast** job is offered while it renders, from its second frame on:
   its worker copies each finished frame beside the movie it will write
-  (`<movie>.mp4.frames`) and removes them when it ends, so a finished
-  playblast is played as its movie. For the other jobs it looks where *Open output folder* goes:
+  (`<movie>.mp4.frames`) and removes them when it ends; a finished
+  playblast opens its movie (`cinedex --frames <movie>.mp4`). For the other jobs it looks where *Open output folder* goes:
   a slapcomp's or a merged comp's frames are in that folder, a render's, a
   denoise's or a channel comp's in the `beauty` AOV folder under it. It is
   offered for render, denoise, composite and slapcomp jobs (partial or full)

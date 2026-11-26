@@ -393,6 +393,15 @@ class ImportShot(TimeOffsetNode, EntityNode):
         self._update_labels()
 
     def execute(self):
+        """Import the shot, then let each th::import_rigs on Follow Stage in
+        a th::animate below follow the new stage
+        (``animate_sync.sync_downstream``)."""
+        result = self._import()
+        from tumblepipe.pipe.houdini import animate_sync
+        animate_sync.sync_downstream(self.native())
+        return result
+
+    def _import(self):
         self._update_labels()
 
         # Get nodes
@@ -712,8 +721,10 @@ def execute(kwargs):
 
 @button('Import Shot')
 def select(kwargs):
-    """Entity button."""
-    ImportShot(kwargs['node']).pick_entity('Select Shot')
+    """Entity button: pick the shot, then Import (as the Import button
+    does, after this callback returns). Cancel changes nothing."""
+    if ImportShot(kwargs['node']).pick_entity('Select Shot'):
+        execute(kwargs)
 
 
 @button('Import Shot')

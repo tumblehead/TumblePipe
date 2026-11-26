@@ -50,8 +50,12 @@ def job_entry(
         'data_dir': plugin_info['StartupDirectory'],
         'env_file': plugin_info.get('EnvironmentFile'),
         'manifest': plugin_info['Manifest'],
-        # Deadline gets the same limit with frame timeouts on (farm.job.Job.job_info).
-        'timeout': queue.task_timeout((job.max_frame_time or 0) * 60, frames, job.chunk_size),
+        # The limit Deadline enforces (farm.job.Job.job_info): per frame
+        # with frame timeouts on, the whole task's for a run_once job.
+        'timeout': queue.task_timeout(
+            (job.max_frame_time or 0) * 60, frames, job.chunk_size,
+            per_frame=job.frame_timeouts,
+        ),
         'outputs': [path_str(p) for p in job.output_paths],
         'priority': job.priority,
         # What the Farm Manager's job details show, as Deadline's job

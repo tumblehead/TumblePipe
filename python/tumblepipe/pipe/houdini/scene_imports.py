@@ -17,7 +17,10 @@ loaded, the ``entity:`` URIs it resolved, and its own parms. The next
 refresh compares them all first; when every node's fingerprint still holds,
 nothing runs. When any one moved, every node runs, as before: an import
 downstream of the moved one reads what it imports, which no fingerprint
-holds.
+holds. A spec marked ``independent`` (``th::import_render``) is the
+exception: while only such nodes moved, only they run. A 22-shot Multi comp
+on the share re-ran all 25 render imports (15-20 s) on every open, because
+one shot had a new render or an import still failed (2026-11-26).
 
 :data:`REFRESH_SPECS` is the list of node types that get re-run. HDAs that
 choose a version but are refreshed through a node inside them, or that do
@@ -32,6 +35,13 @@ is the same for all of them until the sweep ends, so it runs once: each
 ``th::import_render`` re-checked every export_comp, which made opening a
 Multi comp cost imports x exports x scene walks (NRI's 7 shots: 9 min 40 s,
 2026-11-25; ``tests/test_export_refresh_held.py``).
+
+When the refresh ran any node, its last step is Rig Sync
+(``animate_sync.sync_all``): every ``th::import_rigs`` on Follow Stage in a
+``th::animate`` makes its rows follow the stage the imports just rebuilt.
+The imports' own sync is skipped while the deferred resolver refresh is
+open (the stages are not settled yet), so it runs once, here. A refresh
+that ran nothing leaves the stages, and so the rows, as they were.
 """
 
 from __future__ import annotations
@@ -62,6 +72,10 @@ class ImportSpec:
     ``batch`` is the ``"module:function"`` context manager the refresh
     runs every node of the type inside, for work one execute asks for that
     is the same for all of them (once, at the end).
+
+    ``independent`` marks a type whose nodes read nothing another import
+    writes, and whose writes no import reads: a moved one re-runs alone,
+    not with every node of the scene.
     """
 
     type_name: str
@@ -70,6 +84,7 @@ class ImportSpec:
     newest: str
     rows: Optional[str] = None
     batch: Optional[str] = None
+    independent: bool = False
 
 
 REFRESH_SPECS = (
@@ -109,7 +124,12 @@ REFRESH_SPECS = (
     ImportSpec("import_render", "Cop",
                "tumblepipe.pipe.houdini.cops.import_render:ImportRender",
                newest="latest",
-               batch="tumblepipe.pipe.houdini.cops.import_render:held_export_refresh"),
+               batch="tumblepipe.pipe.houdini.cops.import_render:held_export_refresh",
+               # A render import reads its shot's renders and config; no
+               # import reads what it writes. A 22-shot Multi comp on the
+               # share re-ran all 25 imports (15-20 s) on every open while
+               # any one had moved or still failed (2026-11-26).
+               independent=True),
 )
 
 # Expanded HDA dir name (without version) -> the REFRESH_SPECS type inside it
@@ -316,13 +336,15 @@ def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
     ``force`` runs them whatever the fingerprints say (the artist's Update
     Imports). One bad node (stale HDA, missing export) is logged and
     counted, not raised, so the rest of the scene still refreshes; it keeps
-    no fingerprint, so the next refresh runs again. The caller owns the
+    no fingerprint, so the next refresh runs it again (alone when it is
+    ``independent``, see :func:`moved_nodes`). The caller owns the
     update mode: run this under ``util.update_mode(hou.updateMode.Manual)``
     in a GUI session so the re-imports don't each cook the graph.
     """
     from tumblepipe import resolver
     from tumblepipe.api import api
     from tumblepipe.pipe.paths import cached_version_listings
+    from tumblepipe.pipe.paths.render import cached_render_reads
 
     executed = 0
     failed = 0
@@ -331,10 +353,12 @@ def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
     # config scope stamps each config file once for the batch instead of
     # once per read, and the listing cache reads each version folder once:
     # a 26-node Multi on an SMB share made 7,080 stat() calls (42 s)
-    # without them.
+    # without them. The render reads cache does the same for the render
+    # imports' context.json and AOV folders.
     with (resolver.deferred_refresh(),
           api.config.coherent(),
-          cached_version_listings()):
+          cached_version_listings(),
+          cached_render_reads()):
         try:
             nodes = find_import_nodes()
         except Exception:
@@ -342,34 +366,69 @@ def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
             return (0, 1)
         root = _root()
         stored = _load_fingerprints(root)
-        if nodes and not force and all(
-            fingerprint_holds(native, stored.get(native.path()), api.config)
+        holds = {} if force else {
+            native.path(): fingerprint_holds(
+                native, stored.get(native.path()), api.config)
             for native, _ in nodes
-        ):
+        }
+        if nodes and not force and all(holds.values()):
             # Leave the resolver mode as the last import would have.
             resolver.set_latest_mode(
                 bool(stored[nodes[-1][0].path()]["latest_mode"]))
             logger.info(
                 "Import refresh: %d import node(s), nothing moved", len(nodes))
             return (0, 0)
-        fingerprints = {}
+        run = moved_nodes(nodes, holds, force)
+        # The nodes left alone keep what they read last time.
+        ran = {native.path() for native, _ in run}
+        fingerprints = {
+            native.path(): stored[native.path()]
+            for native, _ in nodes if native.path() not in ran
+        }
         held = ExitStack()
         try:
-            for manager in batches(spec for _, spec in nodes):
+            for manager in batches(spec for _, spec in run):
                 held.enter_context(manager)
         except Exception:
             logger.exception("Import refresh: holding batch work failed")
         with held:
-            executed, failed = _run_all(nodes, fingerprints)
+            executed, failed = _run_all(run, fingerprints)
+        if nodes and nodes[-1][0].path() not in ran:
+            resolver.set_latest_mode(
+                bool(stored[nodes[-1][0].path()]["latest_mode"]))
         if stored or fingerprints:
             _store_fingerprints(root, fingerprints)
 
+    if executed:
+        # The resolver refresh has run: rig rows on Follow Stage follow the
+        # stage the imports made (they skip syncing while it is deferred).
+        try:
+            from tumblepipe.pipe.houdini import animate_sync
+            animate_sync.sync_all()
+        except Exception:
+            logger.exception("Import refresh: syncing rig rows failed")
     if executed or failed:
         logger.info(
             "Import refresh: re-executed %d import node(s), %d failed",
             executed, failed,
         )
     return (executed, failed)
+
+
+def moved_nodes(nodes, holds: dict, force: bool = False) -> list:
+    """The ``(native, spec)`` of ``nodes`` a refresh runs, in order.
+
+    ``holds`` maps a node path to whether its fingerprint still holds.
+    Every node when ``force``, or when a node that is not ``independent``
+    moved (an import downstream of it reads what it imports, which no
+    fingerprint holds). Otherwise only the moved ones: each ``independent``
+    node reads nothing another import writes.
+    """
+    if force or any(not holds.get(native.path(), False) and not spec.independent
+                    for native, spec in nodes):
+        return list(nodes)
+    return [(native, spec) for native, spec in nodes
+            if not holds.get(native.path(), False)]
 
 
 def _run_all(nodes, fingerprints: dict) -> tuple[int, int]:

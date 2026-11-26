@@ -189,7 +189,8 @@ def job_entry(doc: dict, job_index: int, deps) -> dict:
         'env_file': plugin.get('EnvironmentFile'),
         'manifest': plugin['Manifest'],
         # MaxTime is the task timeout in seconds; with FrameTimeout (every
-        # job TumblePipe submits) Deadline gives it to each frame.
+        # batched job TumblePipe submits) Deadline gives it to each frame,
+        # without it (a run_once job) to the whole task.
         'timeout': queue.task_timeout(
             max_seconds if isinstance(max_seconds, int) else 0, frames, chunk,
             per_frame=bool(props.get('FrameTimeout', True)),

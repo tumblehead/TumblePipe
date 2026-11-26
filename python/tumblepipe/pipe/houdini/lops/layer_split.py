@@ -5,7 +5,6 @@ import hou
 logger = logging.getLogger(__name__)
 
 from tumblepipe.api import path_str, project_temp_dir
-from tumblepipe.util.progress import report_progress
 from tumblepipe.util.io import copy_version_contents
 from tumblepipe.config.timeline import get_fps
 from tumblepipe.pipe.houdini import nodes as ns
@@ -105,9 +104,12 @@ class LayerSplit(FrameRangeNode, EntityNode, LayerWriter):
             save_export_context(temp_path, entity_uri, department_name, version_name, channel_name='_shared')
 
             # Copy all files from temp to export path
-            report_progress(f"copying {version_name} to server")
-            # context.json last: it marks the version finished.
-            copy_version_contents(temp_path, export_path)
+            # context.json last: it marks the version finished. The copy
+            # reports its own progress (bytes, total, throughput).
+            copy_version_contents(
+                temp_path, export_path,
+                label=f"copying {version_name} to server",
+            )
 
         logger.info(
             f"Shared layer export completed: uri={entity_uri}, dept={department_name}, "

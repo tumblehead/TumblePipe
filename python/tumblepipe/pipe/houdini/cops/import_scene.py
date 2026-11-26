@@ -77,6 +77,8 @@ def execute(kwargs):
 
 @button('Import Scene')
 def select_entity(kwargs):
+    """Entity button: pick the shot, then Import (as the Import button
+    does). Cancel changes nothing."""
     node = ImportScene(kwargs['node'])
-    node.pick_entity('Select Shot', contexts=('shots',))
-    node.execute()
+    if node.pick_entity('Select Shot', contexts=('shots',)):
+        execute(kwargs)
