@@ -47,14 +47,15 @@ pub fn applescript_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// The AppleScript that asks for a file name, offering `offered`, and
-/// prints the POSIX path chosen.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// [`applescript_for`] a movie; the app asks through `_for` (tests only, so
+/// it is not dead code on macOS).
+#[cfg(test)]
 pub fn applescript(offered: &Path) -> String {
     applescript_for(offered, &MOVIE)
 }
 
-/// [`applescript`], for a file of `kind`.
+/// The AppleScript that asks for a file name of `kind`, offering `offered`,
+/// and prints the POSIX path chosen.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn applescript_for(offered: &Path, kind: &Kind) -> String {
     let name = offered.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -66,13 +67,15 @@ pub fn applescript_for(offered: &Path, kind: &Kind) -> String {
     script + ")"
 }
 
-/// zenity's arguments, then kdialog's, offering `offered`.
-#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+/// [`linux_commands_for`] a movie; the app asks through `_for` (tests only,
+/// so it is not dead code on Linux).
+#[cfg(test)]
 pub fn linux_commands(offered: &Path) -> [(&'static str, Vec<String>); 2] {
     linux_commands_for(offered, &MOVIE)
 }
 
-/// [`linux_commands`], for a file of `kind`.
+/// zenity's arguments, then kdialog's, asking for a file of `kind` and
+/// offering `offered`.
 #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
 pub fn linux_commands_for(offered: &Path, kind: &Kind) -> [(&'static str, Vec<String>); 2] {
     let path = offered.to_string_lossy().into_owned();

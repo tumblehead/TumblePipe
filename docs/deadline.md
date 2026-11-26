@@ -261,9 +261,11 @@ on Deadline, and runs in the background as a render node would run it.
   against the system's bundle (`/etc/ssl/cert.pem`), else certifi's.
 - **Houdini:** a task runs the `hython`/`husk` of an install of the job's
   Houdini major (the same build or newer, else the newest of that major),
-  found in SideFX's default place for the platform:
-  `<drive>:\Program Files\Side Effects Software\Houdini <version>` (Windows,
-  drives C–H), `/Applications/Houdini/Houdini<version>` (macOS) or
+  found where Houdini installs on the platform:
+  `<drive>:\Program Files\Side Effects Software\Houdini <version>` or
+  `<drive>:\Houdini <version>` (Windows, drives C–H; a version in both is the
+  Program Files one, unless only the other is complete),
+  `/Applications/Houdini/Houdini<version>` (macOS) or
   `/opt/hfs<version>` (Linux). An install anywhere else is not found, and the
   task fails with *no installed Houdini 22.x for 22.0.457 (found: …)* naming
   what it did find. (Up to 1.91.0 only the Windows place was searched, so

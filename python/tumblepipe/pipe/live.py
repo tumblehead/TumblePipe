@@ -184,6 +184,22 @@ def _windows_process(pid: int, access: int):
     return kernel32, kernel32.OpenProcess(access, False, pid)
 
 
+# The kernel keeps a process's name (/proc/<pid>/comm) to this many bytes.
+_COMM_LENGTH = 15
+# Where Linux lists its processes (a test points it at a folder of its own).
+_PROC = Path('/proc')
+
+
+def _linux_name(proc: Path) -> str:
+    """The name process ``proc`` (``/proc/<pid>``) was started by: its
+    ``comm``, the file it was started through as macOS's ``ps`` and
+    ``_program(command)`` name it (a symlink's own name, where ``exe``
+    resolves it: a venv's ``python`` runs ``python3.12``); ``exe`` when
+    ``comm`` may be cut short at the kernel's limit."""
+    name = (proc / 'comm').read_text().rstrip('\n')
+    return name if len(name.encode()) < _COMM_LENGTH else os.readlink(proc / 'exe')
+
+
 def _process_program(pid) -> str | None:
     """The program process ``pid`` runs, as ``_program`` names it; None when
     no process has that pid (or it has ended)."""
@@ -208,12 +224,12 @@ def _process_program(pid) -> str | None:
             return _program([buffer.value])
         finally:
             kernel32.CloseHandle(handle)
-    proc = Path('/proc') / str(pid)
+    proc = _PROC / str(pid)
     if proc.is_dir():
         try:
             if (proc / 'stat').read_text().rsplit(')', 1)[1].split()[0] == 'Z':
                 return None  # ended, not yet reaped
-            return _program([os.readlink(proc / 'exe')])
+            return _program([_linux_name(proc)])
         except (OSError, IndexError):
             return None
     try:

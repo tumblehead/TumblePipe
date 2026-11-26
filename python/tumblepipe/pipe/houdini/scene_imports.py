@@ -26,6 +26,12 @@ not import upstream publishes at all, are named in
 ``tests/test_scene_imports.py`` fails when a shipped HDA with a ``version``
 parm is in none of the three. ``th::import_rig`` went unrefreshed for as
 long as the list was written by hand.
+
+A spec's ``batch`` holds work every execute of its type asks for and that
+is the same for all of them until the sweep ends, so it runs once: each
+``th::import_render`` re-checked every export_comp, which made opening a
+Multi comp cost imports x exports x scene walks (NRI's 7 shots: 9 min 40 s,
+2026-11-25; ``tests/test_export_refresh_held.py``).
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ import hashlib
 import importlib
 import json
 import logging
+from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -51,6 +58,10 @@ class ImportSpec:
     menu: ``latest`` where it has one, ``current`` where that is the newest
     version on disk. ``rows`` names the multiparm count of a node that
     imports one entity per row, each row with its own ``version#`` parm.
+
+    ``batch`` is the ``"module:function"`` context manager the refresh
+    runs every node of the type inside, for work one execute asks for that
+    is the same for all of them (once, at the end).
     """
 
     type_name: str
@@ -58,6 +69,7 @@ class ImportSpec:
     wrapper: str
     newest: str
     rows: Optional[str] = None
+    batch: Optional[str] = None
 
 
 REFRESH_SPECS = (
@@ -92,9 +104,12 @@ REFRESH_SPECS = (
                newest="current"),
     # A comp's renders: on `latest` it moves to the newest complete render
     # when the workfile opens; a composite submit freezes it in the job.
+    # Each execute re-checks every export_comp: held to one re-check for
+    # the batch (NRI's 7-shot Multi comp: 9 min 40 s to open).
     ImportSpec("import_render", "Cop",
                "tumblepipe.pipe.houdini.cops.import_render:ImportRender",
-               newest="latest"),
+               newest="latest",
+               batch="tumblepipe.pipe.houdini.cops.import_render:held_export_refresh"),
 )
 
 # Expanded HDA dir name (without version) -> the REFRESH_SPECS type inside it
@@ -155,6 +170,19 @@ def outermost(paths: Iterable[str]) -> list[str]:
 def _wrapper_class(spec: ImportSpec):
     module_name, class_name = spec.wrapper.split(":")
     return getattr(importlib.import_module(module_name), class_name)
+
+
+def batches(specs) -> list:
+    """The ``batch`` context managers of ``specs``, once each, in order."""
+    found = []
+    for spec in specs:
+        if spec.batch is not None and spec.batch not in found:
+            found.append(spec.batch)
+    managers = []
+    for name in found:
+        module_name, function_name = name.split(":")
+        managers.append(getattr(importlib.import_module(module_name), function_name)())
+    return managers
 
 
 def execute(native, spec: ImportSpec) -> None:
@@ -295,7 +323,6 @@ def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
     from tumblepipe import resolver
     from tumblepipe.api import api
     from tumblepipe.pipe.paths import cached_version_listings
-    from tumblepipe.pipe.paths.version import recorded_version_reads
 
     executed = 0
     failed = 0
@@ -326,25 +353,14 @@ def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
                 "Import refresh: %d import node(s), nothing moved", len(nodes))
             return (0, 0)
         fingerprints = {}
-        for native, spec in nodes:
-            try:
-                with (recorded_version_reads() as versions,
-                      api.config.recorded_reads() as purposes,
-                      resolver.recorded_resolves() as resolves):
-                    execute(native, spec)
-                executed += 1
-            except Exception:
-                logger.exception(
-                    "Import refresh: executing %s failed", native.path(),
-                )
-                failed += 1
-                continue
-            try:
-                fingerprints[native.path()] = fingerprint(
-                    native, versions, purposes, resolves, api.config)
-            except Exception:
-                logger.debug("Import refresh: fingerprinting %s failed",
-                             native.path(), exc_info=True)
+        held = ExitStack()
+        try:
+            for manager in batches(spec for _, spec in nodes):
+                held.enter_context(manager)
+        except Exception:
+            logger.exception("Import refresh: holding batch work failed")
+        with held:
+            executed, failed = _run_all(nodes, fingerprints)
         if stored or fingerprints:
             _store_fingerprints(root, fingerprints)
 
@@ -353,4 +369,35 @@ def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
             "Import refresh: re-executed %d import node(s), %d failed",
             executed, failed,
         )
+    return (executed, failed)
+
+
+def _run_all(nodes, fingerprints: dict) -> tuple[int, int]:
+    """Execute each of ``nodes`` (``(native, spec)``), recording its
+    fingerprint into ``fingerprints``; ``(executed, failed)``."""
+    from tumblepipe import resolver
+    from tumblepipe.api import api
+    from tumblepipe.pipe.paths.version import recorded_version_reads
+
+    executed = 0
+    failed = 0
+    for native, spec in nodes:
+        try:
+            with (recorded_version_reads() as versions,
+                  api.config.recorded_reads() as purposes,
+                  resolver.recorded_resolves() as resolves):
+                execute(native, spec)
+            executed += 1
+        except Exception:
+            logger.exception(
+                "Import refresh: executing %s failed", native.path(),
+            )
+            failed += 1
+            continue
+        try:
+            fingerprints[native.path()] = fingerprint(
+                native, versions, purposes, resolves, api.config)
+        except Exception:
+            logger.debug("Import refresh: fingerprinting %s failed",
+                         native.path(), exc_info=True)
     return (executed, failed)

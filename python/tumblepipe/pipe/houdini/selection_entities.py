@@ -21,6 +21,7 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.pipe import department_jump
 from tumblepipe.pipe.department_jump import jump_target
 from tumblepipe.pipe.usd.entity_stamp import PrimEntity, distinct_entities
+from tumblepipe.pipe.houdini.untitled import scene_is_untitled
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ def workfile_context():
     from tumblepipe.pipe.houdini.scene_context import scene_context
 
     try:
-        if not hou.hipFile.path() or hou.hipFile.isNewFile():
+        if scene_is_untitled():
             return None
         context = scene_context()
     except Exception:  # noqa: BLE001  an unreadable context is no context
@@ -194,6 +195,25 @@ def entity_active_departments(entity_uri: Uri | None) -> list[str]:
     return active_departments(names, has_work, off, current)
 
 
+def latest_version(entity_uri: Uri | None, department: str) -> str | None:
+    """The version name (``v0012``) of the latest ``department`` workfile
+    of *entity_uri*; None when it has none or it cannot be resolved."""
+    from tumblepipe.pipe.houdini.workfiles import latest_workfile
+    from tumblepipe.pipe.paths.naming import is_versioned, version_of
+
+    if entity_uri is None:
+        return None
+    try:
+        path = latest_workfile(entity_uri, department)
+    except Exception:  # noqa: BLE001  a path that cannot resolve has no version
+        logger.debug("Resolving the %s workfile of %s failed",
+                     department, entity_uri, exc_info=True)
+        return None
+    if path is None or not is_versioned(path):
+        return None
+    return version_of(path)
+
+
 def _status(message: str) -> None:
     hou.ui.setStatusMessage(message, severity=hou.severityType.Warning)
 
@@ -257,7 +277,7 @@ def _save_before_jump(department: str) -> bool:
     """
     from tumblepipe.pipe.houdini.ui.report import report_failure
 
-    unsaved = not hou.hipFile.isNewFile() and hou.hipFile.hasUnsavedChanges()
+    unsaved = not scene_is_untitled() and hou.hipFile.hasUnsavedChanges()
     if not unsaved:
         return True
     context = workfile_context()
@@ -300,9 +320,6 @@ def open_selected_workfile(department: str, new_instance: bool = False) -> bool:
     Must be called on the GUI thread
     (``workfiles.open_workfile_in_session``).
     """
-    from tumblepipe.pipe.houdini import workfiles
-    from tumblepipe.pipe.houdini.ui.report import report_failure
-
     selection = lop_selection()
     entities = distinct_entities(*selection) if selection is not None else []
     if len(entities) > 1:
@@ -323,7 +340,26 @@ def open_selected_workfile(department: str, new_instance: bool = False) -> bool:
                 "workfile, first."
             )
         return False
+    return open_entity_workfile(entity_uri, department, new_instance)
 
+
+def open_entity_workfile(entity_uri: Uri, department: str,
+                         new_instance: bool = False) -> bool:
+    """Open the ``department`` workfile of *entity_uri*: in this session,
+    or in a new Houdini (``new_instance``). For a caller that already knows
+    the entity, such as a menu listing every selected asset.
+
+    Returns whether a workfile was opened. An entity that does not have the
+    department opens nothing and says why in the status bar. In this
+    session, unsaved work is saved first or left to Houdini's prompt
+    (:func:`_save_before_jump`). Must be called on the GUI thread
+    (``workfiles.open_workfile_in_session``).
+    """
+    from tumblepipe.pipe.houdini import workfiles
+    from tumblepipe.pipe.houdini.ui.report import report_failure
+
+    if entity_uri is None:
+        return False
     name = entity_uri.segments[-1]
     if department not in entity_departments(entity_uri):
         _status(f"{name} has no {department} department.")

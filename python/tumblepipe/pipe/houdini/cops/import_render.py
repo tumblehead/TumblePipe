@@ -141,6 +141,8 @@ range and its last after it (a Step 1 comp of a Step 2 render;
 is not known (``comp.check_render_refusal``).
 """
 
+from contextlib import contextmanager
+
 import hou
 
 from tumblepipe.api import path_str, api
@@ -1385,7 +1387,10 @@ class ImportRender(TimeOffsetNode, EntityNode):
         An import saved before #67 moves onto today's outputs first
         (:meth:`upgrade`). A rebuild syncs the downstream light mixes' rows;
         the AOV Outputs unpacks follow what it reads; every
-        export_comp re-checks the channels it reads. The embedded scene
+        export_comp re-checks the channels it reads (once at the end of a
+        batch inside :func:`held_export_refresh`: run many imports there,
+        never in a bare loop, which costs a scene walk per export per
+        import). The embedded scene
         imports, on Update (``scene`` True) and on any refresh (None), only
         for a ``geometry`` or ``camera`` that is read (wired, or with
         ``reaching``, the farm's export_comps, read by one of them) with its
@@ -1938,15 +1943,16 @@ def sync_time_offsets() -> int:
     timeline was laid out or edited); an import whose File COPs did not
     read an offset yet rebuilds. The number that changed what they read."""
     changed = 0
-    for node in find_imports():
-        before = node.get_applied_offset()
-        if node.sync_time_offset():
-            try:
-                node.execute()
-            except ns.NodeError:
-                continue
-        if node.get_applied_offset() != before:
-            changed += 1
+    with held_export_refresh():
+        for node in find_imports():
+            before = node.get_applied_offset()
+            if node.sync_time_offset():
+                try:
+                    node.execute()
+                except ns.NodeError:
+                    continue
+            if node.get_applied_offset() != before:
+                changed += 1
     return changed
 
 
@@ -2021,7 +2027,36 @@ def _sync_downstream_mixes(native):
             pass
 
 
+_export_refresh_held = 0
+_export_refresh_owed = False
+
+
+@contextmanager
+def held_export_refresh():
+    """Run many imports with the export_comps re-checked once, at the end.
+
+    Each :meth:`ImportRender.execute` re-checks every export_comp, and each
+    check lists the scene's imports, so running every import of a Multi
+    one after another cost imports x exports x scene walks: NRI's 7-shot
+    Multi comp took 9 min 40 s to open (2026-11-25). Inside this, the
+    re-check an execute asks for waits until the outermost one closes,
+    and then runs once, also when the work raised."""
+    global _export_refresh_held, _export_refresh_owed
+    _export_refresh_held += 1
+    try:
+        yield
+    finally:
+        _export_refresh_held -= 1
+        if _export_refresh_held == 0 and _export_refresh_owed:
+            _export_refresh_owed = False
+            _refresh_exports()
+
+
 def _refresh_exports():
+    global _export_refresh_owed
+    if _export_refresh_held:
+        _export_refresh_owed = True
+        return
     from tumblepipe.pipe.houdini.cops import export_comp
     export_comp.refresh_warnings()
 

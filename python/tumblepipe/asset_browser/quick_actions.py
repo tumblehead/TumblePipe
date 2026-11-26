@@ -146,10 +146,11 @@ class QuickActions:
             try:
                 import hou
                 from tumblepipe.pipe.paths import get_workfile_context
+                from tumblepipe.pipe.houdini.untitled import scene_is_untitled
                 project_name, kind, group, name = "", "shots", "", ""
                 hip_path = Path(hou.hipFile.path())
                 proj = (
-                    None if hou.hipFile.isNewFile()
+                    None if scene_is_untitled()
                     else self._resolver.project_for_path(hip_path)
                 )
                 if proj is not None:
@@ -345,7 +346,8 @@ class QuickActions:
         if action_id == "save":
             import hou
             from . import save_timer
-            if hou.hipFile.isNewFile():
+            from tumblepipe.pipe.houdini.untitled import scene_is_untitled
+            if scene_is_untitled():
                 text = format_age_html("Last saved", None)
             else:
                 text = format_age_html(

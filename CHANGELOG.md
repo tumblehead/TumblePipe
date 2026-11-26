@@ -12,6 +12,88 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.132.0 — 2026-11-26
+
+### Fixes
+- fix(config_editor): three right-click menu actions that did nothing (`dc48edab`)
+- fix(houdini): the Layer Stack's row buttons are @buttons too (`a929b9f6`)
+- fix(ci): an empty TEST_TIME_BUDGET is preflight's default budget (`bcb7f6fb`)
+- fix(asset_browser): project_for_ref answers None for a mangled id, so a stale favourite stays hidden (`91f09efd`)
+- fix(asset_browser): a refused New Edit raises like every other create (`7d53a750`)
+- fix(cleanup): the Rust ProjectRoots keeps every purpose too (`9a4a07fb`)
+- fix(ci): msvc_env tries vswhere for any version after the asked one fails; failures are BuildErrors (`406ea056`)
+- fix(farm): a turntable collapse job's name says turntable (`2eeac8eb`)
+
+### Refactors
+- refactor(config_editor): the add/remove menu sections pass no action their callbacks ignore (`81248d7c`)
+- refactor(farm): a playblast look's schema says every key is required; DEFAULT_BLUR_SAMPLES goes (`da61c7db`)
+- refactor(cinedex): th_window, one app-icon and X11 window crate for Cinedex and Clean Up (`7f62883d`)
+- refactor(ci): test.sh runs preflight --ci; msvc_env, houdini_majors and host_platform shared; delegate clippy with gpu (`59a6ffc0`)
+- refactor(delegate): th_render_scene is the one C entry; tests share a frame and mesh builder (`e9fbf75f`)
+- refactor(util): byte sizes, ordinal and the HFS DLL directory live once in util; ProjectRoots keeps every purpose (`8532f70e`)
+- refactor(paths): one strict newest-finished-version primitive (`3d897c0a`)
+- refactor(paths): one name for the latest staged build; one staged URI builder (`5c390c9a`)
+- refactor(asset_browser): catalog rules move to their owners: sidecar reader, Root membership, Multi members (`5f698ba6`)
+- refactor(config_editor): typed key/index slots for the JSON editor's rows; one revert to inherited (`ea9474d4`)
+- refactor(farm_submit): the dialog's decisions move to farm/submit; panes typed by a Protocol (`14c7b55d`)
+- refactor(farm_submit): one turntable_problems for an asset's render (`26afe254`)
+- refactor(farm_submit): drop the unread entity_names, and the dialog's leftovers (`da65cd26`)
+- refactor(entity_editor): split the 5.4k-line module along its seams (`b9264226`)
+- refactor(entity_sheet): one pin model for row, group and all shots, behind one cell API (`9a54f564`)
+- refactor(asset_browser): a refused create raises; one Project field and one tag reader (`2822ffde`)
+- refactor(asset_browser): one parser for card ids; every catalog hook routes on a CardRef (`d367d646`)
+- refactor(animate): widths, visibility and primvars split out of animate_points (`cf491184`)
+- refactor(animate, rig): public, distinct names for the helpers other modules use (`7769437b`)
+- refactor(import_shot): the layers to load are a pure plan; execute applies it (`b2cedc1c`)
+- refactor(houdini): every HDA button shows a NodeError as a message; a failed radial drop stops (`7dfba8ca`)
+- refactor(houdini): one stage-validation entry and the entity context from config (`8c12cc19`)
+- refactor(houdini): one layer-cook path for export_layer (single and targets) and layer_split (`1ac92713`)
+- refactor(farm manager): callbacks in place of tuple-key dispatch; per-source job operations in sources.py (`2eb009ab`)
+- refactor(farm): shared receipt, env and temp-folder helpers for the workers (`8686f789`)
+- refactor(farm): the backend-neutral job model moves to farm/job.py; dead pool/group queries go (`71436065`)
+- refactor(farm): delete the dead "up to" publish path, the pre-flight API and the job-config compat defaults (`5af01477`)
+
+### Documentation
+- docs: four references the refactor moved (`57106f66`)
+- docs(farm): submit_entity_batch names the batch fields it reads strictly as required (`ad88626f`)
+
+### Tests
+- test(config_editor): the right-click menus, opened and fired as Qt does (`9a94fdd9`)
+- test(edits): new_edit_creates expects a refused New Edit to raise (`1ffe30e7`)
+- test(farm): the batch-submit record is the same on every platform (`176037f5`)
+- test(harness): TUMBLETROVE_PYTHON is checked as the python/ dir itself, whatever it is called (`3308d63a`)
+- test(entity_editor): the "Project defaults" wording check reads every editor module (`bc1fc05c`)
+- test(asset_browser): setup helpers skip a case variant the store refuses (`ac0bfc15`)
+- test(farm): the job-files record is the same on every platform (`6590f7ca`)
+- test(cinedex): both app_icon copies refuse non-RGBA PNGs and pack every pixel for _NET_WM_ICON (`d6974dc9`)
+- test(ci): Houdini majors parse, the host platform, every Cargo workspace run by preflight (`3091365f`)
+- test(delegate): th_render, th_render_ids and th_render_scene draw the same frame without curves (`10ad4251`)
+- test(util): one spec per twin: byte sizes, ordinals, check labels, the Houdini DLL directory (`323bd105`)
+- test(paths): pin newest finished version, strict and lenient, against a model (`e548299c`)
+- test(paths): pin where staged builds live and the import nodes' version menus (`6f10d9f7`)
+- test(asset_browser): pin the sidecar round trip, a Root's add/remove/edit and a Multi's members (`560c1a71`)
+- test(config_editor): pin the JSON editor's cells, Move menu, Delete, expanded state and drag (`830ef97d`)
+- test(farm_submit): pin the dialog's camera, scene values, refusals and timelines (`d447a47a`)
+- test(asset_browser): for_id's routing property draws no kind named node (`7020c7ea`)
+- test(farm_submit): an asset's turntable refusals and the Assets tab's render values (`acff8a6d`)
+- test(asset_browser): setup helpers skip a shot or asset the create would refuse (`f552ee46`)
+- test(farm_submit): a tab first shown after Run on changed follows it (`b2095fae`)
+- test(entity_editor): the Multis tab's search (`f7a0ace8`)
+- test(entity_sheet): one pin rule for rows, groups and all shots (`6c30d1f5`)
+- test(asset_browser): refused creates and the creation forms' Project dropdown (`6c01a1af`)
+- test(asset_browser): how every catalog hook routes a card id of each kind (`cf19daaf`)
+- test(animate): the helpers th::animate and th::import_rig share across modules (`6c4c0225`)
+- test(import_shot): the layers execute loads, against a model (`86032d39`)
+- test(radial): an asset favorite's drop runs one route (`dc070438`)
+- test(houdini): the Validate button and the Department menus of the layer nodes (`3888f265`)
+- test(houdini): the frames export_layer and layer_split cook through the export ROP (`2690eb80`)
+- test(farm manager): every background result reaches its own handler (`405c9e62`)
+- test(farm): composite, slapcomp and denoise redo only missing receipts and fail on an unwritten one (`eea7a75c`)
+- test(farm): a job's Deadline and local job files reproduce a record (`226aca11`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.131.0 (`d8d6af42`)
+
 ## v1.131.0 — 2026-11-25
 
 ### Fixes

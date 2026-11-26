@@ -149,13 +149,20 @@ def read_compat(manifest: Path) -> str | None:
 
 # ── finding Houdini ───────────────────────────────────────
 
+def windows_install_roots() -> list[Path]:
+    """Where a Windows Houdini is installed: SideFX's default folder, and
+    each drive's root (``C:/Houdini 22.0.466``: an install given its own
+    folder), as ``tumblepipe.apps.houdini`` scans."""
+    default = Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'Side Effects Software'
+    return [default] + [Path(f'{drive}:/') for drive in 'CDEFGH']
+
+
 def installed_houdinis() -> list[tuple[tuple[int, ...], Path]]:
     """``(version, HFS)`` for every Houdini in the standard install places."""
     found = []
     system = platform.system()
     if system == 'Windows':
-        roots = [Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'Side Effects Software']
-        for root in roots:
+        for root in windows_install_roots():
             for path in root.glob('Houdini *') if root.is_dir() else []:
                 found.append((parse_version(path.name), path))
     elif system == 'Linux':

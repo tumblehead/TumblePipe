@@ -25,6 +25,16 @@
 *.cfg    text eol=lf
 *.txt    text eol=lf
 
+# Text that a test compares byte for byte with what code writes: the app
+# icons' SVG and resource script (test_cinedex_icon, test_cleanup_icon) and
+# the wizard migrator's recorded tree (migration.rs
+# whole_run_leaves_the_recorded_tree). Unset, a Windows checkout with
+# core.autocrlf=true made them CRLF and the tests failed there only (CI #407;
+# the .rc, CI #409). rc.exe reads LF.
+*.svg    text eol=lf
+*.golden text eol=lf
+*.rc     text eol=lf
+
 # Shell scripts are executed by sh (Git-Bash on Windows); a CR would end up in
 # the interpreted line and break them. The git hooks are the case that matters.
 *.sh          text eol=lf

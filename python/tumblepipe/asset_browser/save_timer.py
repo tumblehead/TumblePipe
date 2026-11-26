@@ -184,7 +184,8 @@ def unsaved() -> bool:
     """Whether the open scene is a saved file with changes since. An
     untitled scene does not count: the pipeline Save cannot save it."""
     import hou
-    return not hou.hipFile.isNewFile() and hou.hipFile.hasUnsavedChanges()
+    from tumblepipe.pipe.houdini.untitled import scene_is_untitled
+    return not scene_is_untitled() and hou.hipFile.hasUnsavedChanges()
 
 
 def warning_due(prefs) -> bool:

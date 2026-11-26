@@ -120,46 +120,61 @@ class ExportComp(FrameRangeNode, FarmNode, EntityNode):
     def render_node(self):
         return self.native().node(RENDER_NODE)
 
-    def reads_imports(self) -> bool:
+    def _imports(self, shot_uri: Uri, imports=None) -> list:
+        """The import_renders of ``shot_uri``: from ``imports``
+        (:func:`imports_by_shot`) when given, else found in the scene."""
+        if imports is not None:
+            return imports.get(shot_uri, [])
+        from tumblepipe.pipe.houdini.cops.import_render import find_imports
+        return find_imports(shot_uri)
+
+    def reads_imports(self, imports=None) -> bool:
         """Whether a th::import_render reads the node's shot. Without one
         (a slap comp in the render scene, #80) the comp reads the render
-        of its Farm Submit instead."""
-        from tumblepipe.pipe.houdini.cops.import_render import find_imports
+        of its Farm Submit instead. ``imports``: as :meth:`_imports`."""
         shot_uri = self.get_entity_uri()
-        return shot_uri is None or bool(find_imports(shot_uri))
+        return shot_uri is None or bool(self._imports(shot_uri, imports))
 
-    def unread_channels(self) -> list[str]:
+    def unread_channels(self, imports=None) -> list[str]:
         """The shot's channels no import_render of the shot reads; only a
         merged comp (Layer ``comp``) checks, and only one that reads
         imports at all: a comp of its Farm Submit's render reads the
-        channels that render renders (#80)."""
-        from tumblepipe.pipe.houdini.cops.import_render import find_imports
+        channels that render renders (#80). ``imports``: as
+        :meth:`_imports`."""
         if self.parm('layer').eval() != comp.MERGED_LAYER: return []
         shot_uri = self.get_entity_uri()
         if shot_uri is None: return []
-        imports = find_imports(shot_uri)
-        if not imports: return []
+        found = self._imports(shot_uri, imports)
+        if not found: return []
         read = [
-            channel for node in imports
+            channel for node in found
             for channel in node.read_channels()
         ]
         return comp.unread_channels(list_channels(shot_uri), read)
 
-    def refresh_warning(self) -> str:
+    def refresh_warning(self, imports=None) -> str:
         """Show the unread-channel and Preview Frames List warnings on the
         node (empty when none), or the note that it comps its Farm
-        Submit's render when no import reads its shot."""
+        Submit's render when no import reads its shot. ``imports``: the
+        scene's import_renders by shot (:func:`imports_by_shot`), so a
+        re-check of every export lists them once."""
         try:
-            warning = comp.unread_warning(self.unread_channels())
-            if not self.reads_imports():
+            warning = comp.unread_warning(self.unread_channels(imports))
+            if not self.reads_imports(imports):
                 warning = comp.SCENE_COMP_NOTE
         except ns.NodeError:
             warning = ''
         warning = '\n'.join(line for line in [warning, *self.preview_warnings()] if line)
-        self.parm('warning').set(warning)
+        # Only what changed is written: it runs after a workfile loads, and
+        # a set of the value a parm holds marks the scene changed.
+        parm = self.parm('warning')
+        if parm.eval() != warning:
+            parm.set(warning)
         native = self.native()
         if warning:
-            ns.set_node_comment(native, f'Warning: {warning}')
+            comment = f'Warning: {warning}'
+            if native.comment() != comment:
+                ns.set_node_comment(native, comment)
         elif native.comment().startswith('Warning: '):
             native.setComment('')
         return warning
@@ -182,10 +197,32 @@ def find_exports() -> list[ExportComp]:
     return [ExportComp(native) for native in ns.list_by_node_type(TYPE_NAME, 'Cop')]
 
 
+def imports_by_shot() -> dict:
+    """The scene's import_renders, ``{shot Uri: [ImportRender]}``, in
+    scene order; one whose Entity does not resolve is left out, as
+    ``find_imports(shot_uri)`` leaves it out."""
+    from tumblepipe.pipe.houdini.cops.import_render import find_imports
+    found: dict = {}
+    for node in find_imports():
+        try:
+            shot_uri = node.get_entity_uri()
+        except ns.NodeError:
+            continue
+        found.setdefault(shot_uri, []).append(node)
+    return found
+
+
 def refresh_warnings():
-    """Re-check every export_comp's unread channels."""
-    for node in find_exports():
-        node.refresh_warning()
+    """Re-check every export_comp's unread channels, listing the scene's
+    imports once for all of them."""
+    exports = find_exports()
+    if not exports: return
+    # One stamp of each config file for all of them: an Entity resolve
+    # stats its file otherwise (~8 ms each on an SMB share).
+    with api.config.coherent():
+        imports = imports_by_shot()
+        for node in exports:
+            node.refresh_warning(imports)
 
 
 ###############################################################################
@@ -234,7 +271,10 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
     check render whose frames are not known (``comp.check_render_refusal``;
     the comp's frames, :func:`comp_frames`, outside a check render's range
     hold its first and last frame)."""
-    from tumblepipe.pipe.houdini.cops.import_render import find_imports
+    from tumblepipe.pipe.houdini.cops.import_render import (
+        find_imports,
+        held_export_refresh,
+    )
     clicked_shot = clicked.require_entity_uri()
     submits: dict[str, ShotSubmit] = dict()
     for node in find_exports():
@@ -257,10 +297,11 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
         ]
     for submit in submits.values():
         states, node_reads = [], []
-        for node in find_imports(submit.shot_uri):
-            resolved_reads, node_states = node.resolve_states()
-            node_reads.append((node, resolved_reads))
-            states += node_states
+        with held_export_refresh():
+            for node in find_imports(submit.shot_uri):
+                resolved_reads, node_states = node.resolve_states()
+                node_reads.append((node, resolved_reads))
+                states += node_states
         if not states:
             # A comp with no import reads the render of its Farm Submit
             # (#80); this Submit renders nothing.
@@ -515,10 +556,28 @@ def on_created(raw_node):
     node.refresh_warning()
 
 
+_warnings_after_load = False
+
+
 def on_loaded(raw_node):
-    node = ExportComp(raw_node)
-    node._update_labels()
-    node.refresh_warning()
+    """Labels now; the warnings of every export_comp once, after the load
+    (``pipe.houdini.after_load``). Each export re-checking its own while
+    the scene loaded walked the scene for every one of them: 67 s of a
+    74 s load of a 48-shot comp (2026-11-26)."""
+    global _warnings_after_load
+    ExportComp(raw_node)._update_labels()
+    if _warnings_after_load: return
+    _warnings_after_load = True
+
+    def refresh():
+        global _warnings_after_load
+        try:
+            refresh_warnings()
+        finally:
+            _warnings_after_load = False
+
+    from tumblepipe.pipe.houdini import after_load
+    after_load.run(refresh)
 
 
 @button('Submit Composite')

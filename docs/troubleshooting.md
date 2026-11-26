@@ -66,6 +66,32 @@ changes. In the log, `Import refresh: re-executed N import node(s), M failed`
 marks the end of that step, or `Import refresh: N import node(s), nothing
 moved` when no import read anything new and none ran (after 1.99).
 
+### Opening a Multi comp takes minutes
+
+Through 1.132.0, a comp workfile holding many shots could take many minutes
+to open (7 shots: almost 10 minutes on a network share), and **Manual**
+update mode did not help, because nothing was cooking. Each
+`th::export_comp` checked its warning while the workfile loaded, and each
+`th::import_render` checked every export again when the imports refreshed,
+and every one of those checks looked through the whole scene. Later
+releases check the exports once, after the workfile has opened. Submit
+Composite on a Multi comp was slow for the same reason and is fast now too.
+
+If one import in the comp cannot resolve (its Reads says why, e.g. a shot
+that is not in the project), every open re-runs all the imports to try it
+again; that now takes seconds, but fixing or deleting the broken import
+and saving stops it.
+
+### A workfile opened with Shift acts as if it were untitled
+
+Through 1.132.0, a workfile opened in a new Houdini (Shift in the Asset
+Browser, or Shift+click in Alt+D) whose load ended with errors, such as
+missing node types, was treated as an untitled scene. Alt+D said "No
+pipeline workfile" and did not save before jumping, the Save quick action
+neither autosaved nor showed the unsaved badge, and the top bar showed no
+project. Houdini still calls such a scene new after the load. Later
+releases also check whether the scene's file is a saved workfile on disk.
+
 ### My other Houdini's Asset Browser doesn't show what I just saved or published
 
 Through 1.90.2, a browser rebuilt a card only for what its own session did,

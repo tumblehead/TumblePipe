@@ -833,7 +833,8 @@ class PipelineCatalog(Catalog):
     def _session_project_name(self) -> str | None:
         """The registered project the open scene is in, or None."""
         import hou
-        if hou.hipFile.isNewFile():
+        from tumblepipe.pipe.houdini.untitled import scene_is_untitled
+        if scene_is_untitled():
             return None
         proj = self._resolver.project_for_path(Path(hou.hipFile.path()))
         return None if proj is None else proj.name
@@ -923,7 +924,8 @@ class PipelineCatalog(Catalog):
 
     def get_quick_actions_label(self) -> str:
         import hou
-        if not hou.hipFile.isNewFile():
+        from tumblepipe.pipe.houdini.untitled import scene_is_untitled
+        if not scene_is_untitled():
             return Path(hou.hipFile.path()).name
         return ""
 

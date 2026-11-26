@@ -222,12 +222,22 @@ mod macos {
     use objc2::runtime::AnyObject;
     use objc2::{class, msg_send};
 
-    /// AppKit is main-thread only: the apps' window updates run on the
-    /// event loop's (main) thread.
+    /// AppKit is main-thread only. The apps' window updates run on the
+    /// event loop's (main) thread; anywhere else (a test drawing the view,
+    /// as the Clean Up view tests do from every test thread at once, which
+    /// crashed the process: CI #410) nothing is set and no window counts as
+    /// found, so a later update on the main thread sets it.
     pub(super) fn set(png: &[u8]) -> Result<usize, String> {
+        // SAFETY: a Foundation class message with its documented signature,
+        // safe from any thread.
+        let main: bool = unsafe { msg_send![class!(NSThread), isMainThread] };
+        if !main {
+            return Ok(0);
+        }
         // SAFETY: AppKit and Foundation messages with their documented
-        // signatures, on the main thread. The image is retained by the
-        // application once set; the one reference made here is leaked, once.
+        // signatures, on the main thread (checked above). The image is
+        // retained by the application once set; the one reference made here
+        // is leaked, once.
         unsafe {
             let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
             if app.is_null() {
@@ -371,6 +381,19 @@ mod tests {
             assert!(count >= 6, "{app}: {count} sizes");
             let sizes: Vec<u32> = (0..count as usize).map(|i| ico[6 + 16 * i]).map(|b| if b == 0 { 256 } else { u32::from(b) }).collect();
             assert!(sizes.contains(&16) && sizes.contains(&32) && sizes.contains(&256), "{app}: {sizes:?}");
+        }
+    }
+
+    /// AppKit is main-thread only: off it, the Dock icon is not set and no
+    /// window counts as found, from any number of threads at once (Clean
+    /// Up's view tests drew the view, which applies the icon, from every
+    /// test thread, and the process died with SIGSEGV: CI #410).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_dock_icon_waits_for_the_main_thread() {
+        let threads: Vec<_> = (0..16).map(|_| std::thread::spawn(|| macos::set(APPS[1].0.png_256))).collect();
+        for thread in threads {
+            assert_eq!(thread.join().expect("set off the main thread returns"), Ok(0));
         }
     }
 }

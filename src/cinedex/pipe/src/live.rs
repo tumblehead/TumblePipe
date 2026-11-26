@@ -283,6 +283,25 @@ pub fn process_program(pid: u32) -> Option<String> {
     }
 }
 
+/// The kernel keeps a process's name (`/proc/<pid>/comm`) to this many bytes.
+#[cfg(not(windows))]
+const COMM_LENGTH: usize = 15;
+
+/// The name process `proc` (`/proc/<pid>`) was started by: its `comm`, the
+/// file it was started through as macOS's `ps` and [`program_name`] of its
+/// command name it (a symlink's own name, where `exe` resolves it: a venv's
+/// `python` runs `python3.12`); `exe` when `comm` may be cut short at the
+/// kernel's limit.
+#[cfg(not(windows))]
+fn linux_name(proc: &std::path::Path) -> Option<String> {
+    let name = std::fs::read_to_string(proc.join("comm")).ok()?;
+    let name = name.trim_end_matches('\n');
+    if name.len() < COMM_LENGTH {
+        return Some(name.to_owned());
+    }
+    std::fs::read_link(proc.join("exe")).ok().map(|exe| exe.to_string_lossy().into_owned())
+}
+
 #[cfg(not(windows))]
 pub fn process_program(pid: u32) -> Option<String> {
     let proc = PathBuf::from(format!("/proc/{pid}"));
@@ -291,7 +310,7 @@ pub fn process_program(pid: u32) -> Option<String> {
         if stat.rsplit_once(')')?.1.split_whitespace().next()? == "Z" {
             return None; // ended, not yet reaped
         }
-        return std::fs::read_link(proc.join("exe")).ok().map(|exe| program_name(&exe.to_string_lossy()));
+        return linux_name(&proc).map(|name| program_name(&name));
     }
     let out = std::process::Command::new("ps").args(["-p", &pid.to_string(), "-o", "stat=,comm="]).output().ok()?;
     let out = String::from_utf8_lossy(&out.stdout);
@@ -575,6 +594,30 @@ mod tests {
         assert!(husk_alive(&state(&program_name(&me.to_string_lossy()))));
         assert!(!husk_alive(&state("husk")), "a pid running another program counts as gone");
         assert!(!husk_alive(&LiveState { pid: None, ..state("husk") }));
+    }
+
+    /// A program started through a symlink is named by the symlink, as
+    /// live.json records it from the command: on Linux `/proc/<pid>/exe`
+    /// resolves it, which named a venv's `python` `python3.12` (CI #407).
+    #[cfg(unix)]
+    #[test]
+    fn a_program_started_through_a_symlink_is_named_by_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("zzhusk");
+        std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+        let mut child = std::process::Command::new(&link).arg("30").spawn().unwrap();
+        // Until the child has exec'd, it is still named as this test.
+        let mut named = None;
+        for _ in 0..100 {
+            named = process_program(child.id());
+            if named.as_deref() == Some("zzhusk") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(named.as_deref(), Some("zzhusk"));
     }
 
     proptest! {

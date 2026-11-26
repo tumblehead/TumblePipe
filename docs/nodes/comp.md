@@ -325,7 +325,7 @@ Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8
 |---|---|---|
 | Shot | `from_context` | Shots only |
 | Layer | `comp` | `comp` = the merged comp, written as the version's `slapcomp` layer; or a channel, for a per-channel output |
-| Warning | | Shot channels no import reads (Layer `comp` only), and frames the Preview Frames List drops |
+| Warning | | Shot channels no import reads (Layer `comp` only), and frames the Preview Frames List drops. Checked again once the workfile has opened, and after an import updates |
 | Jobs › Preview Frames | off | Also render first, middle and last frame as a quick task, posted before the full range |
 | Jobs › Preview Frames › List | empty | Beside the toggle (enabled while it is on). Empty: first, middle and last. Otherwise the frames to preview, space separated, in that order (key poses, say), any number; the panorama posted to Discord shows the first 8. A frame outside the comp's frames or off **Step**, or a word that is not a whole number, is dropped and named in **Warning** (checked against the node's Frame Range) and again by Submit (against the frames it comps); with none left the preview is first, middle and last |
 | Jobs › Frame Range | From Config | The menu shows the frames From Config gives, e.g. `From Config (1001-1100)`. The frames every import's render covers (each frozen read's `context.json` range, intersected), else the shot's range plus roll; or From Settings (**Start/End-Frame**, **Pre/Post-Roll**). Submit warns when a range reaches past the renders: those frames comp over empty input. The farm log also has a `WARNING:` line per channel for any frame its render does not cover |

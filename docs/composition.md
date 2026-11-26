@@ -687,6 +687,53 @@ it): `selected_entities()`, `selected_entity()` (the one entity, or
 the rule is `pipe.department_jump.jump_target`) and
 `open_selected_workfile(department, new_instance=False)`, which the
 [Alt+D radial](radial-menus.md#altd-jump-to-a-departments-workfile) calls.
+For a caller that already knows the entity, such as a menu that lists
+every selected asset, `open_entity_workfile(entity_uri, department,
+new_instance=False)` opens that entity's workfile whatever is selected
+(the same checks, save-before-opening and status messages), and
+`latest_version(entity_uri, department)` names the version an open would
+land on (`v0012`), or `None` when there is no workfile.
+`entity_active_departments(entity_uri)` lists the departments the jump
+offers for an entity: its asset departments, minus generated ones and
+the ones turned off on that entity. Radial's jump lists call these four
+(and `prim_history.history` below) only where they exist, so
+`tests/test_radial_jump_lists.py` checks their names, the arguments
+Radial passes and the fields of a history row.
+
+### A prim's history: which department wrote it
+
+`tumblepipe.pipe.usd.prim_history`
+([source](../python/tumblepipe/pipe/usd/prim_history.py)) answers, for a
+prim on a composed stage, which layers have a say on it and who wrote
+each one. It needs no `hou`:
+
+| Function | Returns |
+|---|---|
+| `prim_history(stage, prim_path)` | one `Opinion` per layer that holds a spec for the prim, strongest first; `[]` when there is no such prim |
+| `history(stage, prim_paths)` | `{prim path: [Opinion]}` in the order given; each layer's writer is read once |
+| `departments_of(rows)` | the departments in the rows, weakest first (the order they built the prim up) |
+| `layer_owner(layer, root_path=None)` | the `LayerOwner` of one `Sdf.Layer`, or `None` |
+
+An `Opinion` carries `layer` (the layer's identifier), `owner` (a
+`LayerOwner` or `None`), `kind`, `properties` (the property names that
+layer authors on the prim) and `anonymous`; its `label` reads
+`model v0012`, `this workfile` or the layer's file name. `kind` is
+`"defined"` for the weakest layer that `def`-ines the prim (where it
+first exists) and `"changed"` for every other row.
+
+Who wrote a layer is read, in order, from:
+
+1. the `context.json` that every export writes beside its files, in the
+   layer's folder or up to two above it (a layer export's `outputs[0]`,
+   or an export's flat record): entity, department, version, user and
+   time (`source == "context"`);
+2. the entity stamp on the owning asset's root prim in that layer:
+   entity, department and version (`source == "stamp"`);
+3. nothing (`owner is None`): the open workfile's own LOP layers, and
+   files written outside the pipeline.
+
+A `context.json` that names no department counts as none. Radial's
+department jump shows this as its History panel.
 
 ## Dropped-metadata guard
 

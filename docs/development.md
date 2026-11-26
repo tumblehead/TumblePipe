@@ -236,6 +236,24 @@ checkout builds FFmpeg into `build-ffmpeg-<platform>/`, which takes a while;
 a worktree can junction (or symlink) that folder from the main checkout.
 `.ci/test.sh`, which the CI workers run on a manual `RUN=tests` pipeline,
 runs these same stages: `preflight.py --ci --only rust delegate tests`.
+What that run needs from a worker, each found missing on one (CI #407-#410):
+
+- an open-file limit above Linux's default soft 1024: `cargo test` runs a
+  crate's tests on every core at once, so `test.sh` raises the soft limit
+  to the hard one;
+- LF checkouts of the files tests compare byte for byte (the icon files,
+  `*.golden`): `.gitattributes` pins them, and `test_byte_compared_files_lf`
+  fails a new kind of file there without a rule;
+- the tests stage sets `HFS` to the Houdini the delegate stage found, for
+  the modules that run Houdini's bundled Python or `hoiiotool`
+  (`tests/_houdini.py` knows each platform's layout, and the
+  `QT_PLUGIN_PATH` a Linux or macOS Houdini Python needs for Qt);
+- on macOS the player tests find FFmpeg's libraries through
+  `DYLD_FALLBACK_LIBRARY_PATH`: plain `DYLD_LIBRARY_PATH` also reaches the
+  programs the tests start, and sent Houdini's `hffmpeg` to the repo's
+  FFmpeg, which has no H.264 encoder;
+- AppKit only on the main thread: tests draw views from many threads, so
+  the Dock icon (`th_window::app_icon`) is set from the main thread only.
 
 `delegate` builds the playblast delegate (`.ci/build_delegate.py`, into
 `plugins/houdini<major>/`) and renders `.ci/smoke_delegate.py`'s stages
@@ -2611,6 +2629,39 @@ node again by session id inside `fn` (it may be gone by then), as
 every OnLoaded statically: from the handler, following calls within its
 module, nothing may reach `createNode`, `destroy` and the like except
 inside a function handed to `after_load.run`.
+
+### Per-node work that reads the whole scene runs once, not per node
+
+OnLoaded runs once per node, and an import's `execute` runs once per
+import in the open refresh, Submit Composite and the composite worker.
+Work in either that looks at every node of a kind (`find_imports`,
+`find_exports`, `ns.list_by_node_type`, all walks of
+`hou.node('/').allSubChildren()`) then costs nodes × scene: each
+`th::export_comp` re-checked its warning in OnLoaded, and each
+`th::import_render` execute re-checked every export, each check walking
+the scene twice. NRI's 7-shot Multi comp took 9 min 40 s to open, and a
+48-shot comp spent 67 s of a 74 s load in the exports' OnLoaded
+(2026-11-25). Queue such work once per load (`export_comp.on_loaded`: a
+flag, then one `after_load.run`), and run a loop of imports inside
+`import_render.held_export_refresh()`, which re-checks the exports once
+when the outermost hold closes. A refresh spec names its hold as `batch`
+(`scene_imports.REFRESH_SPECS`). Work that runs after the load must write
+only values that changed: `Parm.set` and `setComment` of the same value
+mark the scene changed, and the workfile opens unsaved.
+`tests/test_export_refresh_held.py` counts the scene walks and scans the
+pipeline for import loops outside a hold.
+
+### Ask `scene_is_untitled()`, not `hou.hipFile.isNewFile()`
+
+`hou.hipFile.isNewFile()` stays True for a workfile Houdini opened from
+its command line when the load ended with errors (missing node types),
+even after reloading it, and that is how the Asset Browser's Shift open
+and Alt+D's Shift+click open workfiles. Every check that took the flag
+at its word read such a workfile as untitled (#106, 2026-11-25). Ask
+`pipe.houdini.untitled.scene_is_untitled()`: new **and** the path is
+empty, missing on disk, or named `untitled` (TT Desktop keeps a real
+`untitled.hip`). `tests/test_untitled.py` pins the rule and fails when
+any pipeline code other than `untitled.py` calls `isNewFile()`.
 
 ## Editing an HDA definition
 

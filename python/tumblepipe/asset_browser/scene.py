@@ -895,8 +895,9 @@ def _loaded_workfile_entities() -> list[str]:
     try:
         import hou
         from tumblepipe.pipe.paths import get_workfile_context
+        from tumblepipe.pipe.houdini.untitled import scene_is_untitled
         hip = hou.hipFile.path()
-        if not hip or hou.hipFile.isNewFile():
+        if not hip or scene_is_untitled():
             return []
         return workfile_entities(get_workfile_context(Path(hip)), config_groups.members)
     except Exception:

@@ -78,8 +78,10 @@ def texture_destinations() -> list:
         TextureDestination,
     )
 
+    from tumblepipe.pipe.houdini.untitled import scene_is_untitled
+
     try:
-        if hou.hipFile.isNewFile():
+        if scene_is_untitled():
             return []
         found = asset_texture_root(Path(hou.hipFile.path()))
     except Exception:

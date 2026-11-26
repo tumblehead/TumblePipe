@@ -115,14 +115,19 @@ def _list_dir(path: Path) -> list[Path]:
         return []
 
 def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
-    """The Windows installs under ``<root>/Program Files/Side Effects Software``."""
+    """The Windows installs on the drive at ``root_path``: under
+    ``Program Files/Side Effects Software`` (the installer's default) and at
+    the drive's root (``C:/Houdini 22.0.466``: an install given its own
+    folder, as on the CI build worker). A version in both places counts
+    once: the one under Program Files, unless only the other is complete."""
     result = dict()
-    for install in _list_dir(root_path / 'Program Files' / 'Side Effects Software'):
-        if not install.name.startswith('Houdini'): continue
-        version = _version_of(install.name)
-        if version is None: continue
-        tools = _tools_in(install / 'bin', '.exe', '.cmd')
-        if tools is not None: result[version] = tools
+    for parent in (root_path, root_path / 'Program Files' / 'Side Effects Software'):
+        for install in _list_dir(parent):
+            if not install.name.startswith('Houdini'): continue
+            version = _version_of(install.name)
+            if version is None: continue
+            tools = _tools_in(install / 'bin', '.exe', '.cmd')
+            if tools is not None: result[version] = tools
     return result
 
 def _scan_macos_versions(root_path: Path) -> dict[str, dict[str, Path]]:
@@ -160,7 +165,8 @@ HOUDINI_VERSIONS = None
 def _scan_drives_for_versions() -> dict[str, dict[str, Path]]:
     """Every Houdini install in SideFX's default place for this platform.
 
-    Windows: ``<drive>:/Program Files/Side Effects Software/Houdini <v>``.
+    Windows: ``<drive>:/Program Files/Side Effects Software/Houdini <v>``,
+    or ``<drive>:/Houdini <v>``.
     macOS: ``/Applications/Houdini/Houdini<v>``. Linux: ``/opt/hfs<v>``.
     The render farm is Windows; the local farm runs on all three.
     """

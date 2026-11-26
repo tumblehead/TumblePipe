@@ -24,6 +24,7 @@ import hou
 
 from tumblepipe.pipe import shot_audio as logic
 from tumblepipe.pipe.shot_audio import AudioPanel, AudioSettings, EditVersion
+from tumblepipe.pipe.houdini.untitled import scene_is_untitled
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def scene_audio_panel() -> AudioPanel:
     if re.search(r'(?:^|\s)-a(?:\s|$)', out):
         return logic.parse_audio_panel(out)
     hip = hou.hipFile.path()
-    if not hip or hou.hipFile.isNewFile():
+    if not hip or scene_is_untitled():
         return AudioPanel()
     return logic.parse_audio_panel(logic.hip_audio_text(hip))
 
