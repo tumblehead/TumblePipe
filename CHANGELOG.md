@@ -12,6 +12,45 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.134.0 — 2026-11-26
+
+### Features
+- feat(export): size an export's chunks on its own when Batch is 0 (#108) (`68458030`)
+- feat(export): chunked layer exports publish as value clips (#108) (`9a824c60`)
+- feat(animate): Rig Sync moves a character's keys when one copy becomes several (`9f22344f`)
+- feat(animate): th::import_rigs follows the stage, Add Characters adds the asset (`417d49e3`)
+- feat(animate): th::import_rig names its characters after the stage copies (`a1e81400`)
+- feat(animate): Rig Sync planner, rows that follow the stage (`4229eedc`)
+- feat(farm-submit): Frames, Step, rolls and Match Render in the Playblast section (`f438a90a`)
+- feat(farm-submit): a playblast plays the frames Farm Submit resolves for it (`a535eb1a`)
+- feat(import-rigs): hide th::import_rig from the TAB menu (`8a960876`)
+- feat(import-rigs): Browse... imports on confirm; Browse Rigs... adds several rigs (`a1d588ad`)
+- feat(export): the copy to the server reports size and throughput (`07fb36f1`)
+
+### Fixes
+- fix(export): readers of a published layer follow its clips (#108) (`6582d638`)
+- fix(farm): a one-task job's time limit caps the whole task (`a9fcefbe`)
+- fix(playblast): a TumbleView farm playblast keeps the scene's lights (`78ac4bbf`)
+- fix(farm-manager): Preview in Cinedex plays a finished playblast's movie (`6bfcc2e3`)
+
+### Performance
+- perf(comp): a Multi comp reopens without re-running every render import (`6a812995`)
+
+### Documentation
+- docs(export): large exports written as value clips (#108) (`6d245805`)
+- docs(entity-editor): Import Rigs' button is Add Rigs from Scene (`27bee6af`)
+- docs(farm-submit): the Playblast section's frames and Match Render (`74850ee6`)
+- docs: Browse... imports on confirm; Browse Rigs...; th::import_rig hidden (`92f42e7d`)
+- docs: render imports re-run alone on open; the render reads cache (`649f8034`)
+
+### Tests
+- test(harness): real_module loads a module's own imports real under other tests' fakes (`e622bfdb`)
+- test(import): the Entity button property loads the real modules under test_drop_router's fakes (`d6611a5d`)
+- test(comp): pin the per-node render refresh and the render reads cache (`2e143331`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.133.0 (`d890a4ad`)
+
 ## v1.133.0 — 2026-11-26
 
 ### Features

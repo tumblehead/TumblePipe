@@ -960,7 +960,14 @@ unless the row is held:
   Hero0*: the shot now has several copies of an asset you animated alone,
   so `Hero`'s keys (with its Characters and `th::layout_keys` rows) moved
   to `Hero0`, the copy where `Hero` was. Nothing to do; **Edit > Undo**
-  puts the keys and the rows back together.
+  puts the keys and the rows back together (a Set Scene Copies that
+  raised the copies undoes as one step too). Undo it with Animate closed:
+  Animate writes the keys it has loaded back when you leave it.
+- *Left Animate on scene_animate so it loads the moved keys*: Animate was
+  open on the Scene Animate whose keys moved. It keeps the keys it loaded
+  and writes them back when left, which would have put `Hero`'s keys back
+  beside `Hero0`'s, so the sync left it first (keeping anything you had
+  keyed). Press Enter in the viewer to animate again.
 - *Hero kept beside Hero0*: the same, but `Hero0` had keys of its own, so
   nothing moved (keys are never overwritten) and `Hero` imports at the
   origin with no lookdev. Copy what `Hero0` needs from `Hero` with Copy

@@ -58,8 +58,14 @@ def sync_bookmarks(group: groups_mod.Group | None) -> int:
     ``group`` when it asks for them; the number made.
 
     Without a shared timeline or with bookmarks off this removes the
-    pipeline's bookmarks and makes none.
+    pipeline's bookmarks and makes none. Made with undo off (``playbar.bookmarks_outside_undo``),
+    so the command it runs in stays one undo step.
     """
+    with playbar.bookmarks_outside_undo():
+        return _remake_bookmarks(group)
+
+
+def _remake_bookmarks(group: groups_mod.Group | None) -> int:
     stale = _pipeline_bookmarks()
     if stale:
         hou.anim.removeBookmarks(tuple(stale))

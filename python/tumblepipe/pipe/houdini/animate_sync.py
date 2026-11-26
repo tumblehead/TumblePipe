@@ -348,32 +348,90 @@ def rename_character_rows(animate, dive, old: str, new: str) -> list[str]:
     return changed
 
 
-def move_keys(native, moves) -> list[str]:
+ANIMATE_STATE = 'apexanimate'
+"""The viewer state name of Animate (Houdini's, and TumbleRig's wrapper of
+it, which registers under the same name)."""
+
+LEAVE_STATE = 'select'
+
+
+def viewers_in_animate(panes, node) -> list:
+    """The scene viewers of ``panes`` that have Animate open on Scene
+    Animate ``node``. Animate keeps the scene it loaded and writes it back
+    to ``animation`` when it is left, so a write under it is overwritten
+    with what it held before."""
+    found = []
+    for pane in panes:
+        try:
+            if pane.currentState() != ANIMATE_STATE:
+                continue
+            current = pane.currentNode()
+        except Exception:
+            continue
+        if current is not None and current.path() == node.path():
+            found.append(pane)
+    return found
+
+
+def _scene_viewers() -> list:
+    import hou
+
+    if not hou.isUIAvailable():
+        return []
+    return [pane for pane in hou.ui.paneTabs()
+            if pane.type() == hou.paneTabType.SceneViewer]
+
+
+def leave_animate(node, panes=None) -> int:
+    """Leave Animate in every viewer that has it open on Scene Animate
+    ``node`` (``viewers_in_animate``), so Animate writes what it holds
+    first and loads the new keys when entered again. The viewers left."""
+    left = viewers_in_animate(_scene_viewers() if panes is None else panes, node)
+    for pane in left:
+        pane.setCurrentState(LEAVE_STATE)
+    return len(left)
+
+
+def move_keys(native, moves, panes=None) -> list[str]:
     """Apply ``moves`` (``(old, new)``, ``rig_sync.SyncPlan.moved_keys``)
     for th::import_rigs ``native``: in every Scene Animate of its dive,
     move what it keeps of ``old`` to ``new`` (``animate_rename``), then
     rename ``old``'s Characters and th::layout_keys rows. A Scene Animate
     keeping nothing of ``old`` is not written (a no-op sets no parm). Run
     from the sync only (a button, an import), never from a cook: a cook
-    never edits the network. Returns the status notes."""
+    never edits the network.
+
+    A Scene Animate open in Animate is left first (``leave_animate``) and
+    read again: Animate writes its scene back when left, which would put
+    ``old``'s keys back beside the moved ones. ``panes`` are the scene
+    viewers (all of them when None). Returns the status notes."""
     from tumblepipe.pipe.houdini import shot_start
     from tumblepipe.pipe.houdini.lops import animate_rename
 
     dive = native.parent()
     animate = shot_start.animate_node(native)
     notes = []
+    left = []
     for old, new in moves:
         written = []
         for node in scene_animates(dive):
             stored = _stored_copy(node)
-            if stored is None:
+            if stored is None or not animate_rename.holds_character(stored, old):
                 continue
+            if leave_animate(node, panes):
+                left.append(node.name())
+                stored = _stored_copy(node)
+                if stored is None:
+                    continue
             if animate_rename.rename_character(stored, old, new) == animate_rename.MOVED:
                 node.parm('animation').set(stored)
                 written.append(node.name())
         rename_character_rows(animate, dive, old, new)
         if written:
             notes.append(f"{old}'s keys are now {new}'s (in {', '.join(written)}).")
+    if left:
+        notes.append(f"Left Animate on {', '.join(dict.fromkeys(left))} so it loads the "
+                     "moved keys: enter it again to go on animating.")
     return notes
 
 
@@ -716,13 +774,14 @@ def route_instances(native, index: int) -> str:
     name = asset_uri.segments[-1]
     if source.kind == 'managed':
         managed = managed_import(animate)
-        for row in range(1, managed.parm('asset_imports').eval() + 1):
-            if managed.parm(f'entity{row}').eval() == str(asset_uri):
-                managed.parm(f'instances{row}').set(wanted)
-        before = node.read_rows()
-        managed.execute()
-        if node.read_rows() == before:
-            node.execute()
+        with undo_block(f'{name}: {wanted} copies'):
+            for row in range(1, managed.parm('asset_imports').eval() + 1):
+                if managed.parm(f'entity{row}').eval() == str(asset_uri):
+                    managed.parm(f'instances{row}').set(wanted)
+            before = node.read_rows()
+            managed.execute()
+            if node.read_rows() == before:
+                node.execute()
         return f'{native.name()}: {name} now has {wanted} copies on the stage.'
     if source.kind == 'scene':
         scene_copies._run(

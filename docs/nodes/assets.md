@@ -521,7 +521,11 @@ What a sync keeps:
   `hero` are renamed `hero0`. The comment says *Keys moved to the first
   copy (one copy became several): hero -> hero0*, and a line under it
   names the Scene Animates the keys moved in. The rows and the keys move as one undo step:
-  **Edit > Undo** puts both back. Keys are never overwritten: when `hero0`
+  **Edit > Undo** puts both back (undo with Animate closed: Animate writes
+  what it has loaded back when you leave it). A viewer with Animate open on
+  that Scene Animate leaves Animate before the keys move, so they are not
+  written back over; the comment says so, and Enter in the viewer opens it
+  again. Keys are never overwritten: when `hero0`
   has keys of its own already, nothing moves, `hero` stays on the row
   beside `hero0` and `hero1`, and the comment says *hero kept beside
   hero0*; copy what `hero0` needs with Copy Animation, then remove

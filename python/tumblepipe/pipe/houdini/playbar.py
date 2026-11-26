@@ -4,6 +4,23 @@ from tumblepipe.config.timeline import BlockRange, FrameRange
 
 import hou
 
+
+def bookmarks_outside_undo():
+    """A context to make or remove the session's playbar bookmarks in.
+
+    ``hou.anim.newBookmark`` and ``hou.anim.removeBookmarks`` close any
+    undo group that is open (Houdini 22): everything a command does after
+    them lands on Edit > Undo as a step of its own, so Set Scene Copies
+    took about a hundred undos instead of one. The pipeline's bookmarks are
+    temporary and remade from the configuration on every apply, so they
+    are made with undo off, and the group stays whole. Nothing changes
+    where ``hou.undos`` is missing (the headless stub).
+    """
+    import contextlib
+    undos = getattr(hou, 'undos', None)
+    disabler = getattr(undos, 'disabler', None)
+    return disabler() if disabler is not None else contextlib.nullcontext()
+
 def get_frame_range() -> FrameRange:
     first_frame, last_frame = hou.playbar.frameRange()
     start_frame, end_frame = hou.playbar.playbackRange()

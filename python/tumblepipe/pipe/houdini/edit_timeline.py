@@ -17,6 +17,7 @@ from __future__ import annotations
 import hou
 
 from tumblepipe.pipe import edit_timeline as logic
+from tumblepipe.pipe.houdini import playbar
 from tumblepipe.pipe.edit_timeline import EDIT_KEY, EditDocument, TimelinePlan
 
 # Alternating, so neighbouring clips read apart on the playbar.
@@ -35,19 +36,20 @@ def apply_plan(plan: TimelinePlan, edit_name: str) -> int:
     """Set the playbar to ``plan`` and replace the edit bookmarks with its
     own; the number made. The playhead moves to the edit's first frame
     unless it is already inside it."""
-    stale = edit_bookmarks()
-    if stale:
-        hou.anim.removeBookmarks(tuple(stale))
     hou.playbar.setFrameRange(plan.first, plan.last)
     hou.playbar.setPlaybackRange(plan.first, plan.last)
     if not plan.first <= hou.frame() <= plan.last:
         hou.setFrame(plan.first)
-    for index, spec in enumerate(plan.bookmarks):
-        bookmark = hou.anim.newBookmark(spec.name, spec.start, spec.end)
-        bookmark.setColor(_COLORS[index % len(_COLORS)])
-        bookmark.setComment(spec.comment)
-        bookmark.setMetadata(EDIT_KEY, edit_name)
-        bookmark.setTemporary(True)
+    with playbar.bookmarks_outside_undo():
+        stale = edit_bookmarks()
+        if stale:
+            hou.anim.removeBookmarks(tuple(stale))
+        for index, spec in enumerate(plan.bookmarks):
+            bookmark = hou.anim.newBookmark(spec.name, spec.start, spec.end)
+            bookmark.setColor(_COLORS[index % len(_COLORS)])
+            bookmark.setComment(spec.comment)
+            bookmark.setMetadata(EDIT_KEY, edit_name)
+            bookmark.setTemporary(True)
     return len(plan.bookmarks)
 
 

@@ -404,20 +404,26 @@ def _run(native, shot_import, wanted, rediscover) -> None:
     if shot_uri is None:
         raise ns.NodeError(
             f'{shot_import.path()}: the th::import_shot names no shot.')
-    try:
-        status = set_scene_copies(
-            shot_uri, wanted, store=api.config, confirm=_confirm,
-            restage=_restage, reimport=lambda: _reimport(shot_import),
-            rediscover=rediscover,
-        )
-    except CopiesRefused as refused:
-        raise ns.NodeError(f'{native.path()}: {refused}') from None
+    from tumblepipe.pipe.houdini import animate_sync
+
+    # One undo step for the re-import, the rig sync after it and the ghost
+    # refresh (the Root written to the project stays: undo is for the
+    # network)
+    with animate_sync.undo_block('Set Scene Copies'):
+        try:
+            status = set_scene_copies(
+                shot_uri, wanted, store=api.config, confirm=_confirm,
+                restage=_restage, reimport=lambda: _reimport(shot_import),
+                rediscover=rediscover,
+            )
+        except CopiesRefused as refused:
+            raise ns.NodeError(f'{native.path()}: {refused}') from None
+        animate_ghost.refresh_ghost(native)
     print(status)
     if hou.isUIAvailable():
         hou.ui.setStatusMessage(status, severity=(
             hou.severityType.Warning if 'still:' in status
             else hou.severityType.Message))
-    animate_ghost.refresh_ghost(native)
 
 
 def from_import_rigs(kwargs) -> None:
